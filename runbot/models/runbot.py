@@ -1,3 +1,4 @@
+import docker
 import time
 import logging
 import glob
@@ -223,7 +224,7 @@ class Runbot(models.AbstractModel):
         # Bootstrap
         host._bootstrap()
         if runbot_do_schedule:
-            host._docker_build()
+            host._docker_update_images()
             self._source_cleanup()
             self.env['runbot.build']._local_cleanup()
             self._docker_cleanup()
@@ -366,7 +367,7 @@ class Runbot(models.AbstractModel):
 
     def _docker_cleanup(self):
         _logger.info('Docker cleaning')
-        docker_ps_result = docker_ps()
+        docker_ps_result = [container for container in docker_ps() if container != "runbot-registry"]
 
         containers = {}
         ignored = []
@@ -383,6 +384,40 @@ class Runbot(models.AbstractModel):
         if ignored:
             _logger.info('docker (%s) not deleted because not dest format', list(ignored))
 
+    def _start_docker_registry(self, host):
+        """
+        Start a docker registry if not already running.
+        The registry is in `always_restart` mode, meaning that it will restart properly after a reboot.
+        """
+        docker_client = docker.from_env()
+        try:
+            registry_container = docker_client.containers.get('runbot-registry')
+        except docker.errors.NotFound:
+            registry_container = None
+
+        if registry_container:
+            if registry_container.status in ('running', 'created', 'restarting'):
+                if registry_container.status != 'running':
+                    _logger.info('Docker registry container already found with status %s, skipping start procedure.', registry_container.status)
+                return
+
+            _logger.info('Docker registry container found with status %s, trying the start procedure.', registry_container.status)
+
+        try:
+            registry_container = docker_client.containers.run(
+                'registry:2',
+                name='runbot-registry',
+                volumes={f'{os.path.join(self._root(), "docker-registry")}':{'bind': '/var/lib/registry', 'mode': 'rw'}},
+                ports={5000: ('127.0.0.1', 5001)},
+                restart_policy= {"Name": "always"},
+                detach=True
+            )
+            _logger.info('Docker registry started')
+            # TODO push local images in registry here 
+        except Exception as e:
+            message = f'Starting registry failed with exception: {e}'
+            self.warning(message)
+            _logger.error(message)
 
     def _warning(self, message, *args):
         if args:

@@ -5,6 +5,7 @@ from collections import defaultdict
 from odoo import models, fields, api
 from odoo.tools import config, ormcache
 from ..common import fqdn, local_pgadmin_cursor, os, list_local_dbs, local_pg_cursor
+from ..container import docker_push, docker_pull, docker_prune, docker_images, docker_remove
 
 _logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ class Host(models.Model):
     paused = fields.Boolean('Paused', help='Host will stop scheduling while paused')
     profile = fields.Boolean('Profile', help='Enable profiling on this host')
 
+    use_remote_docker_registry = fields.Boolean('Use remote Docker Registry', default=False, help="Use docker registry for pulling images")
 
     def _compute_nb(self):
         groups = self.env['runbot.build'].read_group(
@@ -117,12 +119,43 @@ class Host(models.Model):
         self._bootstrap_db_template()
         self._bootstrap_local_logs_db()
 
-    def _docker_build(self):
+    def _docker_update_images(self):
         """ build docker images needed by locally pending builds"""
-        _logger.info('Building docker images...')
         self.ensure_one()
-        for dockerfile in self.env['runbot.dockerfile'].search([('to_build', '=', True)]):
-            dockerfile._build(self)
+        icp = self.env['ir.config_parameter']
+        docker_registry_host = self.browse(int(icp.get_param('runbot.docker_registry_host_id', default=0)))
+        # pull all images from the runbot docker registry
+        is_registry = docker_registry_host == self
+        all_docker_files = self.env['runbot.dockerfile'].search([])
+        all_tags = set(all_docker_files.mapped('image_tag'))
+        if docker_registry_host and self.use_remote_docker_registry and not is_registry:
+            _logger.info('Pulling docker images...')
+            for dockerfile in all_docker_files:
+                remote_tag = f'dockerhub.{docker_registry_host.name}/{dockerfile.image_tag}'
+                pull_result, image = docker_pull(remote_tag)
+                if pull_result:
+                    image.tag(dockerfile.image_tag)
+        else:
+            _logger.info('Building docker images...')
+            for dockerfile in self.env['runbot.dockerfile'].search([('to_build', '=', True)]):
+                dockerfile._build(self)
+                if is_registry:
+                    docker_push(dockerfile.image_tag)
+
+        _logger.info('Cleaning docker images...')
+        for image in docker_images():
+            for tag in image.tags:
+                if tag.startswith('odoo:') and tag not in all_tags:  # what about odoo:latest
+                    _logger.info(f"Removing tag '{tag}' since it doesn't exist anymore")
+                    docker_remove(tag)
+
+        result = docker_prune()
+        if result['ImagesDeleted']:
+            for r in result['ImagesDeleted']:
+                for operation, identifier in r.items():
+                    _logger.info(f"{operation}: {identifier}")
+        if result['SpaceReclaimed']:
+            _logger.info(f"Space reclaimed: {result['SpaceReclaimed']}")
         _logger.info('Done...')
 
     @ormcache()
