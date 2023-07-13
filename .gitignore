@@ -11,3 +11,4 @@ runbot/static/sources
 runbot/static/nginx
 runbot/static/databases
 runbot/static/docker
+runbot/static/docker-registry

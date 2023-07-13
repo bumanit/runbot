@@ -32,10 +32,10 @@ class TestCron(RunbotCase):
         mock_update_batches.assert_called()
 
     @patch('time.sleep', side_effect=sleep)
-    @patch('odoo.addons.runbot.models.host.Host._docker_build')
+    @patch('odoo.addons.runbot.models.host.Host._docker_update_images')
     @patch('odoo.addons.runbot.models.host.Host._bootstrap')
     @patch('odoo.addons.runbot.models.runbot.Runbot._scheduler')
-    def test_cron_build(self, mock_scheduler, mock_host_bootstrap, mock_host_docker_build, *args):
+    def test_cron_build(self, mock_scheduler, mock_host_bootstrap, mock_host_docker_update_images, *args):
         """ test that cron_fetch_and_build do its work """
         hostname = 'cronhost.runbot.com'
         self.patchers['hostname_patcher'].return_value = hostname
@@ -49,7 +49,7 @@ class TestCron(RunbotCase):
             pass  # sleep raises an exception to avoid to stay stuck in loop
         mock_scheduler.assert_called()
         mock_host_bootstrap.assert_called()
-        mock_host_docker_build.assert_called()
+        mock_host_docker_update_images.assert_called()
         host = self.env['runbot.host'].search([('name', '=', hostname)])
         self.assertTrue(host, 'A new host should have been created')
         # self.assertGreater(host.psql_conn_count, 0, 'A least one connection should exist on the current psql batch')

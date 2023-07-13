@@ -124,6 +124,83 @@ def _docker_build(build_dir, image_tag):
         msg = f"{''.join(l.get('stream') or '' for l in e.build_log)}\nERROR:{e.msg}"
         return (False, msg)
 
+def docker_push(image_tag):
+    return _docker_push(image_tag)
+
+
+def _docker_push(image_tag):
+    """Push a Docker image to the localy hosted docker registry
+    :param image_tag: the image tag (or id) to push
+    :return: tuple(success, msg) where success is a boolean and msg is the error message or None
+    """
+    docker_client = docker.from_env()
+    try:
+        image = docker_client.images.get(image_tag)
+    except docker.errors.ImageNotFound:
+        return (False, f"Docker image '{image_tag}' not found.")
+
+    push_tag = f'127.0.0.1:5001/{image_tag}'
+    image.tag(push_tag)
+    error = None
+    try:
+        for push_progress in docker_client.images.push(push_tag, stream=True, decode=True):
+            # the push method is supposed to raise in cases of API errors but doesn't in other cases
+            # e.g. connection errors or the image tag does not exists locally ...
+            if 'error' in push_progress:
+                error = str(push_progress)  # just stringify the whole as it might contains other keys like errorDetail ...
+    except docker.errors.APIError as e:
+        error = e
+    if error:
+        return (False, error)
+    return (True, None)
+
+
+def docker_pull(image_tag):
+    return _docker_pull(image_tag)
+
+
+def _docker_pull(image_tag):
+    """Pull a docker image from a registry.
+    :param image_tag: the full image tag, including the registry host
+    e.g.: `dockerhub.runbot102.odoo.com/odoo:PureNobleTest`
+    :return: tuple(success, image) where success is a boolean and image a Docker image object or None in case of failure
+    """
+    docker_client = docker.from_env()
+    try:
+        image = docker_client.images.pull(image_tag)
+    except docker.errors.APIError:
+        message = f"failed Docker pull for {image_tag}"
+        _logger.warning(message)
+        return (False, None)
+    return (True, image)
+
+
+def docker_remove(image_tag):
+    return _docker_remove(image_tag)
+
+
+def _docker_remove(image_tag):
+    docker_client = docker.from_env()
+    try:
+        docker_client.images.remove(image_tag, force=1)
+    except docker.errors.APIError:
+        message = f"Docker remove failed for {image_tag}"
+        _logger.exception(message)
+        return False
+    return True
+
+
+def docker_prune():
+    return _docker_prune()
+
+
+def _docker_prune():
+    docker_client = docker.from_env()
+    try:
+        return docker_client.images.prune()
+    except docker.errors.APIError:
+        _logger.exception('Docker prune failed')
+        return {'ImagesDeleted': None, 'SpaceReclaimed': 0}
 
 def docker_run(*args, **kwargs):
     return _docker_run(*args, **kwargs)
@@ -296,7 +373,18 @@ def docker_ps():
 def _docker_ps():
     """Return a list of running containers names"""
     docker_client = docker.client.from_env()
-    return [ c.name for c in docker_client.containers.list()]
+    return [c.name for c in docker_client.containers.list()]
+
+
+def docker_images():
+    return _docker_images()
+
+
+def _docker_images():
+    """Return a list of running existing images"""
+    docker_client = docker.client.from_env()
+    return [c for c in docker_client.images.list()]
+
 
 def sanitize_container_name(name):
     """Returns a container name with unallowed characters removed"""
