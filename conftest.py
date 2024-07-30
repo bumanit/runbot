@@ -451,7 +451,13 @@ def server(request, db, port, module, addons_path, tmpdir):
 
     cov = []
     if request.config.getoption('--coverage'):
-        cov = ['coverage', 'run', '-p', '--source=odoo.addons.runbot_merge,odoo.addons.forwardport', '--branch']
+        cov = [
+            'coverage', 'run',
+            '-p', '--branch',
+            '--source=odoo.addons.runbot_merge,odoo.addons.forwardport',
+            '--context', request.node.nodeid,
+            '-m',
+        ]
 
     r, w = os.pipe2(os.O_NONBLOCK)
     buf = bytearray()
