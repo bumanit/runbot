@@ -13,6 +13,7 @@ it up), ...
 """
 from __future__ import annotations
 
+import builtins
 import datetime
 import itertools
 import json
@@ -487,7 +488,7 @@ stderr:
         ], order='source_id, id'), lambda p: p.source_id)
 
     def _reminder(self):
-        cutoff = self.env.context.get('forwardport_updated_before') \
+        cutoff = getattr(builtins, 'forwardport_updated_before', None) \
               or fields.Datetime.to_string(datetime.datetime.now() - DEFAULT_DELTA)
         cutoff_dt = fields.Datetime.from_string(cutoff)
 

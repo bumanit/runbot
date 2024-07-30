@@ -8,6 +8,7 @@
         <field name="interval_type">minutes</field>
         <field name="numbercall">-1</field>
         <field name="doall" eval="False"/>
+        <field name="priority">43</field>
     </record>
 
     <record model="ir.cron" id="updates">
@@ -19,6 +20,7 @@
         <field name="interval_type">minutes</field>
         <field name="numbercall">-1</field>
         <field name="doall" eval="False"/>
+        <field name="priority">46</field>
     </record>
 
     <record model="ir.cron" id="reminder">

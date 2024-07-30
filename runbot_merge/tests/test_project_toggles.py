@@ -1,3 +1,4 @@
+import datetime
 import functools
 from itertools import repeat
 
@@ -66,16 +67,16 @@ def test_staging_priority(env, project, repo, config, mode, cutoff, second):
     with repo:
         [m] = repo.make_commits(None, Commit("m", tree={"ble": "1"}), ref="heads/master")
 
-        [c] = repo.make_commits(m, Commit("c", tree={"1": "1"}), ref="heads/pr1")
+        repo.make_commits(m, Commit("c", tree={"1": "1"}), ref="heads/pr1")
         pr1 = repo.make_pr(title="whatever", target="master", head="pr1")
 
-        [c] = repo.make_commits(m, Commit("c", tree={"2": "2"}), ref="heads/pr2")
+        repo.make_commits(m, Commit("c", tree={"2": "2"}), ref="heads/pr2")
         pr2 = repo.make_pr(title="whatever", target="master", head="pr2")
 
-        [c] = repo.make_commits(m, Commit("c", tree={"3": "3"}), ref="heads/pr3")
+        repo.make_commits(m, Commit("c", tree={"3": "3"}), ref="heads/pr3")
         pr3 = repo.make_pr(title="whatever", target="master", head="pr3")
 
-        [c] = repo.make_commits(m, Commit("c", tree={"4": "4"}), ref="heads/pr4")
+        repo.make_commits(m, Commit("c", tree={"4": "4"}), ref="heads/pr4")
         pr4 = repo.make_pr(title="whatever", target="master", head="pr4")
 
     prs = [pr1, pr2, pr3, pr4]
@@ -106,6 +107,13 @@ def test_staging_priority(env, project, repo, config, mode, cutoff, second):
     # trigger a split
     with repo:
         repo.post_status('staging.master', 'failure')
+
+    # specifically delay creation of new staging to observe the failed
+    # staging's state and the splits
+    model, cron_id = env['ir.model.data'].check_object_reference('runbot_merge', 'staging_cron')
+    env[model].browse([cron_id]).write({
+        'nextcall': (datetime.datetime.utcnow() + datetime.timedelta(minutes=10)).isoformat(" ", "seconds")
+    })
     env.run_crons('runbot_merge.process_updated_commits', 'runbot_merge.merge_cron')
     assert not staging.active
     assert not env['runbot_merge.stagings'].search([]).active

@@ -8,6 +8,7 @@
     <field name="interval_type">minutes</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
+    <field name="priority">30</field>
   </record>
   <record model="ir.cron" id="staging_cron">
     <field name="name">Check for progress of PRs and create Stagings</field>
@@ -18,6 +19,7 @@
     <field name="interval_type">minutes</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
+    <field name="priority">40</field>
   </record>
   <record model="ir.cron" id="feedback_cron">
     <field name="name">Send feedback to PR</field>
@@ -28,6 +30,7 @@
     <field name="interval_type">minutes</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
+    <field name="priority">60</field>
   </record>
   <record model="ir.cron" id="labels_cron">
     <field name="name">Update labels on PR</field>
@@ -38,6 +41,7 @@
     <field name="interval_type">minutes</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
+    <field name="priority">70</field>
   </record>
   <record model="ir.cron" id="fetch_prs_cron">
     <field name="name">Check for PRs to fetch</field>
@@ -48,6 +52,7 @@
     <field name="interval_type">minutes</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
+    <field name="priority">10</field>
   </record>
   <record model="ir.cron" id="check_linked_prs_status">
     <field name="name">Warn on linked PRs where only one is ready</field>
@@ -58,6 +63,7 @@
     <field name="interval_type">hours</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
+    <field name="priority">50</field>
   </record>
   <record model="ir.cron" id="process_updated_commits">
     <field name="name">Impact commit statuses on PRs and stagings</field>
@@ -68,5 +74,6 @@
     <field name="interval_type">minutes</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
+    <field name="priority">20</field>
   </record>
 </odoo>

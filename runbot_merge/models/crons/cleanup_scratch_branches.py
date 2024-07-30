@@ -29,4 +29,4 @@ class BranchCleanup(models.TransientModel):
                     _logger.info("no tmp branch found for %s:%s", r.name, b.name)
                 res = gh('delete', f'git/refs/heads/staging.{b.name}', check=False)
                 if res.status_code != 204:
-                    _logger.info("no staging branch found for %s:%s", res.name, b.name)
+                    _logger.info("no staging branch found for %s:%s", r.name, b.name)

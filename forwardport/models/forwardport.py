@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import builtins
 import contextlib
 import logging
 import re
@@ -345,7 +346,7 @@ class DeleteBranches(models.Model, Queue):
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
     def _search_domain(self):
-        cutoff = self.env.context.get('forwardport_merged_before') \
+        cutoff = getattr(builtins, 'forwardport_merged_before', None) \
              or fields.Datetime.to_string(datetime.now() - MERGE_AGE)
         return [('pr_id.merge_date', '<', cutoff)]
 
