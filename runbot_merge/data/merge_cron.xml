@@ -26,8 +26,8 @@
     <field name="model_id" ref="model_runbot_merge_pull_requests_feedback"/>
     <field name="state">code</field>
     <field name="code">model._send()</field>
-    <field name="interval_number">1</field>
-    <field name="interval_type">minutes</field>
+    <field name="interval_number">6</field>
+    <field name="interval_type">hours</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
     <field name="priority">60</field>
@@ -48,8 +48,8 @@
     <field name="model_id" ref="model_runbot_merge_fetch_job"/>
     <field name="state">code</field>
     <field name="code">model._check(True)</field>
-    <field name="interval_number">1</field>
-    <field name="interval_type">minutes</field>
+    <field name="interval_number">6</field>
+    <field name="interval_type">hours</field>
     <field name="numbercall">-1</field>
     <field name="doall" eval="False"/>
     <field name="priority">10</field>

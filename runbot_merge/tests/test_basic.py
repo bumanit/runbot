@@ -3534,7 +3534,6 @@ class TestUnknownPR:
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons(
             'runbot_merge.fetch_prs_cron',
-            'runbot_merge.feedback_cron',
         )
 
         assert prx.comments == [
@@ -3559,7 +3558,6 @@ class TestUnknownPR:
             prx.post_review('APPROVE', 'hansen r+', config['role_reviewer']['token'])
         env.run_crons(
             'runbot_merge.fetch_prs_cron',
-            'runbot_merge.feedback_cron',
         )
 
         # FIXME: either split out reviews in local or merge reviews & comments in remote

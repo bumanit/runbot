@@ -1774,6 +1774,12 @@ class Feedback(models.Model):
         help="Token field (from repo's project) to use to post messages"
     )
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        # any time a feedback is created, it can be sent
+        self.env.ref('runbot_merge.feedback_cron')._trigger()
+        return super().create(vals_list)
+
     def _send(self):
         ghs = {}
         to_remove = []
@@ -2423,6 +2429,11 @@ class FetchJob(models.Model):
     repository = fields.Many2one('runbot_merge.repository', required=True)
     number = fields.Integer(required=True, group_operator=None)
     closing = fields.Boolean(default=False)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        self.env.ref('runbot_merge.fetch_prs_cron')._trigger()
+        return super().create(vals_list)
 
     def _check(self, commit=False):
         """

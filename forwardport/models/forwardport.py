@@ -77,6 +77,16 @@ class ForwardPortTasks(models.Model, Queue):
     retry_after = fields.Datetime(required=True, default='1900-01-01 01:01:01')
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
+    def create(self, vals_list):
+        self.env.ref('forwardport.port_forward')._trigger()
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if retry := vals.get('retry_after'):
+            self.env.ref('forwardport.port_forward')\
+                ._trigger(fields.Datetime.to_datetime(retry))
+        return super().write(vals)
+
     def _search_domain(self):
         return super()._search_domain() + [
             ('retry_after', '<=', fields.Datetime.to_string(fields.Datetime.now())),
@@ -260,6 +270,10 @@ class UpdateQueue(models.Model, Queue):
     original_root = fields.Many2one('runbot_merge.pull_requests')
     new_root = fields.Many2one('runbot_merge.pull_requests')
 
+    def create(self, vals_list):
+        self.env.ref('forwardport.updates')._trigger()
+        return super().create(vals_list)
+
     def _process_item(self):
         previous = self.new_root
         sentry_sdk.set_tag("update-root", self.new_root.display_name)
@@ -344,6 +358,10 @@ class DeleteBranches(models.Model, Queue):
     _description = "Removes branches of merged PRs"
 
     pr_id = fields.Many2one('runbot_merge.pull_requests')
+
+    def create(self, vals_list):
+        self.env.ref('forwardport.remover')._trigger(datetime.now() - MERGE_AGE)
+        return super().create(vals_list)
 
     def _search_domain(self):
         cutoff = getattr(builtins, 'forwardport_merged_before', None) \

@@ -22,5 +22,7 @@ class FreezeWizard(models.Model):
     def unlink(self):
         r = super().unlink()
         if not (self.env.context.get('forwardport_keep_disabled') or self.search_count([])):
-            self.env.ref('forwardport.port_forward').active = True
+            cron = self.env.ref('forwardport.port_forward')
+            cron.active = True
+            cron._trigger()  # process forward ports enqueued during the freeze period
         return r

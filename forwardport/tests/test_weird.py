@@ -695,7 +695,7 @@ def test_retarget_after_freeze(env, config, make_repo, users):
         port_pr.base = 'bprime'
     assert port_id.target == new_branch
 
-    env.run_crons('forwardport.port_forward')
+    env.run_crons(None)
     assert not job.exists(), "job should have succeeded and apoptosed"
 
     # since the PR was "already forward-ported" to the new branch it should not
@@ -816,11 +816,7 @@ def test_freeze(env, config, make_repo, users):
     # re-enable forward-port cron after freeze
     _, cron_id = env['ir.model.data'].check_object_reference('forwardport', 'port_forward', context={'active_test': False})
     env['ir.cron'].browse([cron_id]).active = True
-
-    # run crons to process the feedback, run a second time in case of e.g.
-    # forward porting
-    env.run_crons()
-    env.run_crons()
+    env.run_crons('forwardport.port_forward')
 
     assert release_id.state == 'merged'
     assert not env['runbot_merge.pull_requests'].search([
@@ -896,7 +892,7 @@ def test_missing_magic_ref(env, config, make_repo):
     # check that the batch is still here and targeted for the future
     req = env['forwardport.batches'].search([])
     assert len(req) == 1
-    assert req.retry_after > datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    assert req.retry_after > datetime.utcnow().isoformat(" ", "seconds")
     # reset retry_after
     req.retry_after = '1900-01-01 01:01:01'
 
@@ -905,7 +901,7 @@ def test_missing_magic_ref(env, config, make_repo):
         [c2] = prod.make_commits(a_head.id, Commit('y', tree={'x': '0'}))
     assert c2 != c
     pr_id.head = c2
-    env.run_crons()
+    env.run_crons(None)
 
     fp_id = env['runbot_merge.pull_requests'].search([('source_id', '=', pr_id.id)])
     assert fp_id
@@ -1161,7 +1157,7 @@ def test_reminder_detached(env, config, make_repo, users):
     pr_c = prod.get_pr(pr_c_id.number)
 
     # region sanity check
-    env.run_crons('forwardport.reminder', 'runbot_merge.feedback_cron', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
 
     assert pr_b.comments == [
         seen(env, pr_b, users),
@@ -1195,7 +1191,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 
     # region check detached
     pr_c_id.write({'parent_id': False, 'detach_reason': 'because'})
-    env.run_crons('forwardport.reminder', 'runbot_merge.feedback_cron', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
 
     assert pr_b.comments[2:] == [
         (users['user'], "@%s @%s child PR %s was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross." % (

@@ -9,10 +9,7 @@ def default_crons():
     return [
         'runbot_merge.merge_cron',
         'runbot_merge.staging_cron',
-        'forwardport.port_forward',
-        'forwardport.updates',
         'runbot_merge.check_linked_prs_status',
-        'runbot_merge.feedback_cron',
     ]
 
 # public_repo — necessary to leave comments
