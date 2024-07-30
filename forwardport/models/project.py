@@ -501,8 +501,6 @@ stderr:
             pr_ids = {p.id for p in prs}
             for pr in prs:
                 pr_ids.discard(pr.parent_id.id)
-            print(source, prs, [p.parent_id for p in prs],
-                  '\n\t->', pr_ids, flush=True)
             for pr in (p for p in prs if p.id in pr_ids):
                 self.env.ref('runbot_merge.forwardport.reminder')._send(
                     repository=pr.repository,

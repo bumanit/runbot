@@ -602,7 +602,6 @@ def _rate_limited(req):
         if not q.ok and q.headers.get('X-RateLimit-Remaining') == '0':
             reset = int(q.headers['X-RateLimit-Reset'])
             delay = max(0, round(reset - time.time() + 1.0))
-            print("Hit rate limit, sleeping for", delay, "seconds")
             time.sleep(delay)
             continue
         break

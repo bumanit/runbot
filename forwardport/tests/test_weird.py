@@ -1197,11 +1197,6 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     pr_c_id.write({'parent_id': False, 'detach_reason': 'because'})
     env.run_crons('forwardport.reminder', 'runbot_merge.feedback_cron', context={'forwardport_updated_before': FAKE_PREV_WEEK})
 
-    for p in env['runbot_merge.pull_requests'].search_read(
-        [], ['id', 'parent_id', 'source_id', 'display_name']
-    ):
-        print(p, flush=True)
-
     assert pr_b.comments[2:] == [
         (users['user'], "@%s @%s child PR %s was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross." % (
             users['user'],
