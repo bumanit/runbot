@@ -607,7 +607,7 @@ def test_timeout_bump_on_pending(env, repo, config):
     st.timeout_limit = old_timeout
     with repo:
         repo.post_status('staging.master', 'pending', 'ci/runbot')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert st.timeout_limit > old_timeout
 
 def test_staging_ci_failure_single(env, repo, users, config, page):
@@ -2463,7 +2463,7 @@ class TestPRUpdate(object):
 
         env.run_crons()
         pr_id = to_pr(env, pr)
-        env.run_crons('runbot_merge.process_updated_commits')
+        env.run_crons(None)
         assert pr_id.message == 'title\n\nbody'
         assert pr_id.state == 'ready'
         old_reviewer = pr_id.reviewed_by
@@ -3008,7 +3008,7 @@ class TestBatching(object):
                 reviewer=None,
             )
             pr02.post_comment('hansen alone r+', config['role_reviewer']['token'])
-        env.run_crons('runbot_merge.process_updated_commits')
+        env.run_crons(None)
         pr01_id = to_pr(env, pr01)
         assert pr01_id.blocked is False
         pr02_id = to_pr(env, pr02)
@@ -3077,7 +3077,7 @@ class TestBatching(object):
         with repo:
             repo.post_status('staging.master', 'success', 'ci/runbot')
             repo.post_status('staging.master', 'success', 'legal/cla')
-        env.run_crons('runbot_merge.process_updated_commits', 'runbot_merge.merge_cron', 'runbot_merge.staging_cron')
+        env.run_crons('runbot_merge.merge_cron', 'runbot_merge.staging_cron')
         assert pr2.state == 'merged'
 
 class TestReviewing:

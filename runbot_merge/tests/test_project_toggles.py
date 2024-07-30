@@ -101,7 +101,7 @@ def test_staging_priority(env, project, repo, config, mode, cutoff, second):
         for pr, pr_id in zip(prs[cutoff:], pr_ids[cutoff:]):
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
             repo.post_status(pr_id.head, 'success')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert not pr_ids.filtered(lambda p: p.blocked)
 
     # trigger a split
@@ -114,7 +114,7 @@ def test_staging_priority(env, project, repo, config, mode, cutoff, second):
     env[model].browse([cron_id]).write({
         'nextcall': (datetime.datetime.utcnow() + datetime.timedelta(minutes=10)).isoformat(" ", "seconds")
     })
-    env.run_crons('runbot_merge.process_updated_commits', 'runbot_merge.merge_cron')
+    env.run_crons('runbot_merge.merge_cron')
     assert not staging.active
     assert not env['runbot_merge.stagings'].search([]).active
     assert env['runbot_merge.split'].search_count([]) == 2

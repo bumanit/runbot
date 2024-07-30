@@ -597,7 +597,7 @@ def test_disapproval(env, config, make_repo, users):
         prod.post_status(pr2_id.head, 'success')
         pr2.post_comment('hansen r+', token=config['role_other']['token'])
     # no point creating staging for our needs, just propagate statuses
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert pr1_id.state == 'ready'
     assert pr2_id.state == 'ready'
 

@@ -34,15 +34,15 @@ def test_status_applies(env, repo, config):
 
     with repo:
         repo.post_status(c, 'success', 'ci')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert pr_id.state == 'opened'
     with repo:
         repo.post_status(c, 'success', 'pr')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert pr_id.state == 'opened'
     with repo:
         repo.post_status(c, 'success', 'lint')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert pr_id.state == 'validated'
 
     with repo:
@@ -53,15 +53,15 @@ def test_status_applies(env, repo, config):
     assert st.state == 'pending'
     with repo:
         repo.post_status('staging.master', 'success', 'ci')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert st.state == 'pending'
     with repo:
         repo.post_status('staging.master', 'success', 'lint')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert st.state == 'pending'
     with repo:
         repo.post_status('staging.master', 'success', 'staging')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert st.state == 'success'
 
 @pytest.mark.usefixtures('_setup_statuses')
@@ -84,11 +84,11 @@ def test_status_skipped(env, project, repo, config):
 
     with repo:
         repo.post_status(c, 'success', 'ci')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert pr_id.state == 'opened'
     with repo:
         repo.post_status(c, 'success', 'pr')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert pr_id.state == 'validated'
 
     with repo:
@@ -99,11 +99,11 @@ def test_status_skipped(env, project, repo, config):
     assert st.state == 'pending'
     with repo:
         repo.post_status('staging.maintenance', 'success', 'staging')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert st.state == 'pending'
     with repo:
         repo.post_status('staging.maintenance', 'success', 'ci')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert st.state == 'success'
 
 def test_pseudo_version_tag(env, project, make_repo, setreviewers, config):
