@@ -7,7 +7,6 @@ import requests
 @pytest.fixture
 def default_crons():
     return [
-        'runbot_merge.merge_cron',
         'runbot_merge.staging_cron',
         'runbot_merge.check_linked_prs_status',
     ]

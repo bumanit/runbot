@@ -114,7 +114,7 @@ def test_staging_priority(env, project, repo, config, mode, cutoff, second):
     env[model].browse([cron_id]).write({
         'nextcall': (datetime.datetime.utcnow() + datetime.timedelta(minutes=10)).isoformat(" ", "seconds")
     })
-    env.run_crons('runbot_merge.merge_cron')
+    env.run_crons(None)
     assert not staging.active
     assert not env['runbot_merge.stagings'].search([]).active
     assert env['runbot_merge.split'].search_count([]) == 2
