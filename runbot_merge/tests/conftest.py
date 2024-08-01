@@ -7,8 +7,6 @@ def module():
 @pytest.fixture
 def default_crons():
     return [
-        # env['runbot_merge.project']._create_stagings()
-        'runbot_merge.staging_cron',
         # env['runbot_merge.pull_requests']._check_linked_prs_statuses()
         'runbot_merge.check_linked_prs_status',
     ]

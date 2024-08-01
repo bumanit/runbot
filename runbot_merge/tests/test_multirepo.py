@@ -493,7 +493,7 @@ def test_ff_fail(env, project, repo_a, repo_b, config):
     with repo_a, repo_b:
         repo_a.post_status('heads/staging.master', 'success')
         repo_b.post_status('heads/staging.master', 'success')
-    env.run_crons('runbot_merge.staging_cron')
+    env.run_crons(None)
     assert repo_b.commit('heads/master').id == cn,\
         "B should still be at the conflicting commit"
     assert repo_a.commit('heads/master').id == root_a,\

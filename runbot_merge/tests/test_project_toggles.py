@@ -111,15 +111,17 @@ def test_staging_priority(env, project, repo, config, mode, cutoff, second):
     # specifically delay creation of new staging to observe the failed
     # staging's state and the splits
     model, cron_id = env['ir.model.data'].check_object_reference('runbot_merge', 'staging_cron')
-    env[model].browse([cron_id]).write({
-        'nextcall': (datetime.datetime.utcnow() + datetime.timedelta(minutes=10)).isoformat(" ", "seconds")
-    })
+    staging_cron = env[model].browse([cron_id])
+    staging_cron.active = False
+
     env.run_crons(None)
     assert not staging.active
     assert not env['runbot_merge.stagings'].search([]).active
     assert env['runbot_merge.split'].search_count([]) == 2
 
-    env.run_crons()
+    staging_cron.active = True
+    # manually trigger that cron, as having the cron disabled prevented the creation of the triggers entirely
+    env.run_crons('runbot_merge.staging_cron')
 
     # check that st.pr_ids are the PRs we expect
     st = env['runbot_merge.stagings'].search([])

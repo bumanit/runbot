@@ -2067,6 +2067,9 @@ class Stagings(models.Model):
             self.env.ref("runbot_merge.merge_cron")\
                 ._trigger(fields.Datetime.to_datetime(timeout))
 
+        if vals.get('active') is False:
+            self.env.ref("runbot_merge.staging_cron")._trigger()
+
         return super().write(vals)
 
     # only depend on staged_at as it should not get modified, but we might

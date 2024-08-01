@@ -598,7 +598,7 @@ def test_staging_ci_timeout(env, repo, config, page, update_op: Callable[[int], 
     timeout = env['runbot_merge.project'].search([]).ci_timeout
 
     pr_id.staging_id.write(update_op(timeout))
-    env.run_crons('runbot_merge.staging_cron')
+    env.run_crons(None)
     assert pr_id.state == 'error', "timeout should fail the PR"
 
     dangerbox = pr_page(page, pr).cssselect('.alert-danger span')
@@ -1248,7 +1248,7 @@ class TestRetry:
         with repo:
             pr.post_comment('hansen retry', config['role_' + retrier]['token'])
         assert pr_id.state == 'ready'
-        env.run_crons('runbot_merge.staging_cron')
+        env.run_crons(None)
 
         staging_head2 = repo.commit('heads/staging.master')
         assert staging_head2 != staging_head
@@ -1281,7 +1281,7 @@ class TestRetry:
 
         with repo:
             pr.post_comment('hansen retry', config['role_reviewer']['token'])
-        env.run_crons('runbot_merge.staging_cron')
+        env.run_crons(None)
 
         with repo:
             repo.post_status('staging.master', 'success', 'legal/cla')
@@ -1771,7 +1771,7 @@ commits, I need to know how to merge it:
 
             c0 = repo.make_commit(m, 'C0', None, tree={'a': 'b'})
             prx = repo.make_pr(title="gibberish", body="blahblah", target='master', head=c0)
-        env.run_crons('runbot_merge.staging_cron')
+        env.run_crons(None)
 
         with repo:
             repo.post_status(prx.head, 'success', 'legal/cla')
@@ -1813,7 +1813,7 @@ commits, I need to know how to merge it:
 
             c0 = repo.make_commit(m, 'C0', None, tree={'a': 'b'})
             prx = repo.make_pr(title="gibberish", body=None, target='master', head=c0)
-        env.run_crons('runbot_merge.staging_cron')
+        env.run_crons(None)
 
         with repo:
             repo.post_status(prx.head, 'success', 'legal/cla')
@@ -3089,7 +3089,7 @@ class TestBatching(object):
         with repo:
             repo.post_status('staging.master', 'success', 'ci/runbot')
             repo.post_status('staging.master', 'success', 'legal/cla')
-        env.run_crons('runbot_merge.staging_cron')
+        env.run_crons(None)
         assert pr2.state == 'merged'
 
 class TestReviewing:
