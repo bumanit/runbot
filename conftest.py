@@ -540,8 +540,8 @@ def server(request, db, port, module, addons_path, tmpdir):
         p.wait(timeout=30)
 
 @pytest.fixture
-def env(request, port, server, db, default_crons):
-    yield Environment(port, db, default_crons)
+def env(request, port, server, db):
+    yield Environment(port, db)
     if request.node.get_closest_marker('expect_log_errors'):
         if b"Traceback (most recent call last):" not in server[1]:
             pytest.fail("should have found error in logs.")
@@ -1229,11 +1229,10 @@ class LabelsProxy(collections.abc.MutableSet):
         assert r.ok, r.text
 
 class Environment:
-    def __init__(self, port, db, default_crons=()):
+    def __init__(self, port, db):
         self._uid = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/common'.format(port)).authenticate(db, 'admin', 'admin', {})
         self._object = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/object'.format(port))
         self._db = db
-        self._default_crons = default_crons
 
     def __call__(self, model, method, *args, **kwargs):
         return self._object.execute_kw(
@@ -1255,7 +1254,7 @@ class Environment:
 
 
     def run_crons(self, *xids, **kw):
-        crons = xids or self._default_crons
+        crons = xids or ['runbot_merge.check_linked_prs_status']
         cron_ids = []
         for xid in crons:
             if xid is None:

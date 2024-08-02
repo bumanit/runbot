@@ -5,13 +5,6 @@ def module():
     return 'runbot_merge'
 
 @pytest.fixture
-def default_crons():
-    return [
-        # env['runbot_merge.pull_requests']._check_linked_prs_statuses()
-        'runbot_merge.check_linked_prs_status',
-    ]
-
-@pytest.fixture
 def project(env, config):
     return env['runbot_merge.project'].create({
         'name': 'odoo',
