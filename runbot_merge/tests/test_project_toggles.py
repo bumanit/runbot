@@ -1,3 +1,4 @@
+import datetime
 import functools
 from itertools import repeat
 
@@ -66,16 +67,16 @@ def test_staging_priority(env, project, repo, config, mode, cutoff, second):
     with repo:
         [m] = repo.make_commits(None, Commit("m", tree={"ble": "1"}), ref="heads/master")
 
-        [c] = repo.make_commits(m, Commit("c", tree={"1": "1"}), ref="heads/pr1")
+        repo.make_commits(m, Commit("c", tree={"1": "1"}), ref="heads/pr1")
         pr1 = repo.make_pr(title="whatever", target="master", head="pr1")
 
-        [c] = repo.make_commits(m, Commit("c", tree={"2": "2"}), ref="heads/pr2")
+        repo.make_commits(m, Commit("c", tree={"2": "2"}), ref="heads/pr2")
         pr2 = repo.make_pr(title="whatever", target="master", head="pr2")
 
-        [c] = repo.make_commits(m, Commit("c", tree={"3": "3"}), ref="heads/pr3")
+        repo.make_commits(m, Commit("c", tree={"3": "3"}), ref="heads/pr3")
         pr3 = repo.make_pr(title="whatever", target="master", head="pr3")
 
-        [c] = repo.make_commits(m, Commit("c", tree={"4": "4"}), ref="heads/pr4")
+        repo.make_commits(m, Commit("c", tree={"4": "4"}), ref="heads/pr4")
         pr4 = repo.make_pr(title="whatever", target="master", head="pr4")
 
     prs = [pr1, pr2, pr3, pr4]
@@ -100,18 +101,27 @@ def test_staging_priority(env, project, repo, config, mode, cutoff, second):
         for pr, pr_id in zip(prs[cutoff:], pr_ids[cutoff:]):
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
             repo.post_status(pr_id.head, 'success')
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert not pr_ids.filtered(lambda p: p.blocked)
 
     # trigger a split
     with repo:
         repo.post_status('staging.master', 'failure')
-    env.run_crons('runbot_merge.process_updated_commits', 'runbot_merge.merge_cron')
+
+    # specifically delay creation of new staging to observe the failed
+    # staging's state and the splits
+    model, cron_id = env['ir.model.data'].check_object_reference('runbot_merge', 'staging_cron')
+    staging_cron = env[model].browse([cron_id])
+    staging_cron.active = False
+
+    env.run_crons(None)
     assert not staging.active
     assert not env['runbot_merge.stagings'].search([]).active
     assert env['runbot_merge.split'].search_count([]) == 2
 
-    env.run_crons()
+    staging_cron.active = True
+    # manually trigger that cron, as having the cron disabled prevented the creation of the triggers entirely
+    env.run_crons('runbot_merge.staging_cron')
 
     # check that st.pr_ids are the PRs we expect
     st = env['runbot_merge.stagings'].search([])

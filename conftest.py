@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import select
 import shutil
 import threading
@@ -316,7 +317,8 @@ class DbDict(dict):
                 '-d', db, '-i', module + ',saas_worker,auth_oauth',
                 '--max-cron-threads', '0',
                 '--stop-after-init',
-                '--log-level', 'warn'
+                '--log-level', 'warn',
+                '--log-handler', 'py.warnings:ERROR',
             ],
                 check=True,
                 env={**os.environ, 'XDG_DATA_HOME': str(d)}
@@ -324,6 +326,7 @@ class DbDict(dict):
             f.write(db)
             f.flush()
             os.fsync(f.fileno())
+            subprocess.run(['psql', db, '-c', "UPDATE ir_cron SET nextcall = 'infinity'"])
 
         return db
 
@@ -413,15 +416,58 @@ def dummy_addons_path():
         mod = pathlib.Path(dummy_addons_path, 'saas_worker')
         mod.mkdir(0o700)
         (mod / '__init__.py').write_text('''\
+import builtins
+import logging
+import threading
+
+import psycopg2
+
+import odoo
 from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 
 class Base(models.AbstractModel):
     _inherit = 'base'
 
     def run_crons(self):
+        builtins.forwardport_merged_before = self.env.context.get('forwardport_merged_before')
+        builtins.forwardport_updated_before = self.env.context.get('forwardport_updated_before')
         self.env['ir.cron']._process_jobs(self.env.cr.dbname)
+        del builtins.forwardport_updated_before
+        del builtins.forwardport_merged_before
         return True
+
+
+class IrCron(models.Model):
+    _inherit = 'ir.cron'
+
+    @classmethod
+    def _process_jobs(cls, db_name):
+        t = threading.current_thread()
+        try:
+            db = odoo.sql_db.db_connect(db_name)
+            t.dbname = db_name
+            with db.cursor() as cron_cr:
+                # FIXME: override `_get_all_ready_jobs` to directly lock the cron?
+                while jobs := next((
+                    job
+                    for j in cls._get_all_ready_jobs(cron_cr)
+                    if (job := cls._acquire_one_job(cron_cr, (j['id'],)))
+                ), None):
+                    # take into account overridings of _process_job() on that database
+                    registry = odoo.registry(db_name)
+                    registry[cls._name]._process_job(db, cron_cr, job)
+                    cron_cr.commit()
+
+        except psycopg2.ProgrammingError as e:
+            raise
+        except Exception:
+            _logger.warning('Exception in cron:', exc_info=True)
+        finally:
+            if hasattr(t, 'dbname'):
+                del t.dbname
 ''', encoding='utf-8')
         (mod / '__manifest__.py').write_text(pprint.pformat({
             'name': 'dummy saas_worker',
@@ -445,6 +491,7 @@ def addons_path(request, dummy_addons_path):
 def server(request, db, port, module, addons_path, tmpdir):
     log_handlers = [
         'odoo.modules.loading:WARNING',
+        'py.warnings:ERROR',
     ]
     if not request.config.getoption('--log-github'):
         log_handlers.append('github_requests:WARNING')
@@ -500,8 +547,8 @@ def server(request, db, port, module, addons_path, tmpdir):
         p.wait(timeout=30)
 
 @pytest.fixture
-def env(request, port, server, db, default_crons):
-    yield Environment(port, db, default_crons)
+def env(request, port, server, db):
+    yield Environment(port, db)
     if request.node.get_closest_marker('expect_log_errors'):
         if b"Traceback (most recent call last):" not in server[1]:
             pytest.fail("should have found error in logs.")
@@ -608,7 +655,6 @@ def _rate_limited(req):
         if not q.ok and q.headers.get('X-RateLimit-Remaining') == '0':
             reset = int(q.headers['X-RateLimit-Reset'])
             delay = max(0, round(reset - time.time() + 1.0))
-            print("Hit rate limit, sleeping for", delay, "seconds")
             time.sleep(delay)
             continue
         break
@@ -1190,11 +1236,10 @@ class LabelsProxy(collections.abc.MutableSet):
         assert r.ok, r.text
 
 class Environment:
-    def __init__(self, port, db, default_crons=()):
+    def __init__(self, port, db):
         self._uid = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/common'.format(port)).authenticate(db, 'admin', 'admin', {})
         self._object = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/object'.format(port))
         self._db = db
-        self._default_crons = default_crons
 
     def __call__(self, model, method, *args, **kwargs):
         return self._object.execute_kw(
@@ -1216,16 +1261,20 @@ class Environment:
 
 
     def run_crons(self, *xids, **kw):
-        crons = xids or self._default_crons
-        print('running crons', crons, file=sys.stderr)
+        crons = xids or ['runbot_merge.check_linked_prs_status']
+        cron_ids = []
         for xid in crons:
-            t0 = time.time()
-            print('\trunning cron', xid, '...', file=sys.stderr)
+            if xid is None:
+                continue
+
             model, cron_id = self('ir.model.data', 'check_object_reference', *xid.split('.', 1))
             assert model == 'ir.cron', "Expected {} to be a cron, got {}".format(xid, model)
-            self('ir.cron', 'method_direct_trigger', [cron_id], **kw)
-            print('\tdone %.3fs' % (time.time() - t0), file=sys.stderr)
-        print('done', file=sys.stderr)
+            cron_ids.append(cron_id)
+        if cron_ids:
+            self('ir.cron', 'write', cron_ids, {
+                'nextcall': (datetime.datetime.utcnow() - datetime.timedelta(seconds=30)).isoformat(" ", "seconds")
+            }, **kw)
+        self('base', 'run_crons', [], **kw)
         # sleep for some time as a lot of crap may have happened (?)
         wait_for_hook()
 

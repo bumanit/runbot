@@ -123,7 +123,7 @@ def test_straightforward_flow(env, config, make_repo, users):
         prod.post_status(pr1.head, 'success', 'legal/cla')
 
     env.run_crons()
-    env.run_crons('forwardport.reminder', 'runbot_merge.feedback_cron', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
 
     pr0_, pr1_, pr2 = env['runbot_merge.pull_requests'].search([], order='number')
 
@@ -329,8 +329,8 @@ def test_empty(env, config, make_repo, users):
     assert project.fp_github_name == users['other']
 
     # check reminder
-    env.run_crons('forwardport.reminder', 'runbot_merge.feedback_cron', context={'forwardport_updated_before': FAKE_PREV_WEEK})
-    env.run_crons('forwardport.reminder', 'runbot_merge.feedback_cron', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
 
     awaiting = (
         users['other'],
@@ -374,7 +374,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     # check that this stops if we close the PR
     with prod:
         fail_pr.close()
-    env.run_crons('forwardport.reminder', 'runbot_merge.feedback_cron', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
     assert pr1.comments == [
         (users['reviewer'], 'hansen r+'),
         seen(env, pr1, users),
@@ -597,14 +597,14 @@ def test_disapproval(env, config, make_repo, users):
         prod.post_status(pr2_id.head, 'success')
         pr2.post_comment('hansen r+', token=config['role_other']['token'])
     # no point creating staging for our needs, just propagate statuses
-    env.run_crons('runbot_merge.process_updated_commits')
+    env.run_crons(None)
     assert pr1_id.state == 'ready'
     assert pr2_id.state == 'ready'
 
     # oh no, pr1 has an error!
     with prod:
         pr1.post_comment('hansen r-', token=config['role_other']['token'])
-    env.run_crons('runbot_merge.feedback_cron')
+    env.run_crons(None)
     assert pr1_id.state == 'validated', "pr1 should not be approved anymore"
     assert pr2_id.state == 'ready', "pr2 should not be affected"
 
@@ -899,7 +899,7 @@ class TestClosing:
             prod.post_status(pr1_id.head, 'success', 'legal/cla')
             prod.post_status(pr1_id.head, 'success', 'ci/runbot')
         env.run_crons()
-        env.run_crons('forwardport.reminder', 'runbot_merge.feedback_cron')
+        env.run_crons('forwardport.reminder')
 
         assert env['runbot_merge.pull_requests'].search([], order='number') == pr0_id | pr1_id,\
             "closing the PR should suppress the FP sequence"

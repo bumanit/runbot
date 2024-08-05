@@ -45,9 +45,20 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     staging_id = branch_id.active_staging_id
     assert staging_id == pr_id.staging_id
 
+    # staging of `pr` should have generated a staging branch
+    _ = repo.get_ref('heads/staging.other')
+    # stagings should not need a tmp branch anymore, so this should not exist
+    with pytest.raises(AssertionError, match=r'Not Found'):
+        repo.get_ref('heads/tmp.other')
+
     # disable branch "other"
     branch_id.active = False
     env.run_crons()
+
+    # triggered cleanup should have deleted the staging for the disabled `other`
+    # target branch
+    with pytest.raises(AssertionError, match=r'Not Found'):
+        repo.get_ref('heads/staging.other')
 
     # the PR should not have been closed implicitly
     assert pr_id.state == 'ready'
@@ -86,17 +97,10 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     assert pr_id.staging_id
 
     # staging of `pr` should have generated a staging branch
-    _ = repo.get_ref('heads/staging.other')
+    _ = repo.get_ref('heads/staging.other2')
     # stagings should not need a tmp branch anymore, so this should not exist
     with pytest.raises(AssertionError, match=r'Not Found'):
-        repo.get_ref('heads/tmp.other')
-
-    assert env['base'].run_crons()
-
-    # triggered cleanup should have deleted the staging for the disabled `other`
-    # target branch
-    with pytest.raises(AssertionError, match=r'Not Found'):
-        repo.get_ref('heads/staging.other')
+        repo.get_ref('heads/tmp.other2')
 
 def test_new_pr_no_branch(env, project, make_repo, setreviewers, users):
     """ A new PR to an *unknown* branch should be ignored and warn

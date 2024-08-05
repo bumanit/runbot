@@ -9,10 +9,11 @@ class BranchCleanup(models.TransientModel):
     _description = "cleans up scratch refs for deactivated branches"
 
     def _run(self):
-        deactivated = self.env['runbot_merge.branch'].search([
-            ('active', '=', False),
-            ('write_date', '>=', self.env.context['lastcall']),
-        ])
+        domain = [('active', '=', False)]
+        if lastcall := self.env.context['lastcall']:
+            domain.append(('write_date', '>=', lastcall))
+        deactivated = self.env['runbot_merge.branch'].search(domain)
+
         _logger.info(
             "deleting scratch (tmp and staging) refs for branches %s",
             ', '.join(b.name for b in deactivated)
@@ -29,4 +30,4 @@ class BranchCleanup(models.TransientModel):
                     _logger.info("no tmp branch found for %s:%s", r.name, b.name)
                 res = gh('delete', f'git/refs/heads/staging.{b.name}', check=False)
                 if res.status_code != 204:
-                    _logger.info("no staging branch found for %s:%s", res.name, b.name)
+                    _logger.info("no staging branch found for %s:%s", r.name, b.name)

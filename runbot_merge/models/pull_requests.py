@@ -1774,6 +1774,12 @@ class Feedback(models.Model):
         help="Token field (from repo's project) to use to post messages"
     )
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        # any time a feedback is created, it can be sent
+        self.env.ref('runbot_merge.feedback_cron')._trigger()
+        return super().create(vals_list)
+
     def _send(self):
         ghs = {}
         to_remove = []
@@ -2056,16 +2062,28 @@ class Stagings(models.Model):
                 for context, status in statuses.get(commit.sha, {}).items()
             ]
 
+    def write(self, vals):
+        if timeout := vals.get('timeout_limit'):
+            self.env.ref("runbot_merge.merge_cron")\
+                ._trigger(fields.Datetime.to_datetime(timeout))
+
+        if vals.get('active') is False:
+            self.env.ref("runbot_merge.staging_cron")._trigger()
+
+        return super().write(vals)
+
     # only depend on staged_at as it should not get modified, but we might
     # update the CI timeout after the staging have been created and we
     # *do not* want to update the staging timeouts in that case
     @api.depends('staged_at')
     def _compute_timeout_limit(self):
+        timeouts = set()
         for st in self:
-            st.timeout_limit = fields.Datetime.to_string(
-                  fields.Datetime.from_string(st.staged_at)
-                + datetime.timedelta(minutes=st.target.project_id.ci_timeout)
-            )
+            t = st.timeout_limit = st.staged_at + datetime.timedelta(minutes=st.target.project_id.ci_timeout)
+            timeouts.add(t)
+        if timeouts:
+            # we might have very different limits for each staging so need to schedule them all
+            self.env.ref("runbot_merge.merge_cron")._trigger_list(timeouts)
 
     @api.depends('batch_ids.prs')
     def _compute_prs(self):
@@ -2141,9 +2159,11 @@ class Stagings(models.Model):
 
             s.state = st
             if s.state != 'pending':
+                self.env.ref("runbot_merge.merge_cron")._trigger()
                 s.staging_end = fields.Datetime.now()
             if update_timeout_limit:
-                s.timeout_limit = fields.Datetime.to_string(datetime.datetime.now() + datetime.timedelta(minutes=s.target.project_id.ci_timeout))
+                s.timeout_limit = datetime.datetime.now() + datetime.timedelta(minutes=s.target.project_id.ci_timeout)
+                self.env.ref("runbot_merge.merge_cron")._trigger(s.timeout_limit)
                 _logger.debug("%s got pending status, bumping timeout to %s (%s)", self, s.timeout_limit, cmap)
 
     def action_cancel(self):
@@ -2423,6 +2443,11 @@ class FetchJob(models.Model):
     repository = fields.Many2one('runbot_merge.repository', required=True)
     number = fields.Integer(required=True, group_operator=None)
     closing = fields.Boolean(default=False)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        self.env.ref('runbot_merge.fetch_prs_cron')._trigger()
+        return super().create(vals_list)
 
     def _check(self, commit=False):
         """

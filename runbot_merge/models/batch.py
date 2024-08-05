@@ -223,13 +223,15 @@ class Batch(models.Model):
                     failed and f"{failed} have failed CI",
                 ]))
             else:
-                if batch.blocked and batch.cancel_staging:
-                    if splits := batch.target.split_ids:
-                        splits.unlink()
-                    batch.target.active_staging_id.cancel(
-                        'unstaged by %s becoming ready',
-                        ', '.join(batch.prs.mapped('display_name')),
-                    )
+                if batch.blocked:
+                    self.env.ref("runbot_merge.staging_cron")._trigger()
+                    if batch.cancel_staging:
+                        if splits := batch.target.split_ids:
+                            splits.unlink()
+                        batch.target.active_staging_id.cancel(
+                            'unstaged by %s becoming ready',
+                            ', '.join(batch.prs.mapped('display_name')),
+                        )
                 batch.blocked = False
 
 

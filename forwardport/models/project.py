@@ -13,6 +13,7 @@ it up), ...
 """
 from __future__ import annotations
 
+import builtins
 import datetime
 import itertools
 import json
@@ -487,7 +488,7 @@ stderr:
         ], order='source_id, id'), lambda p: p.source_id)
 
     def _reminder(self):
-        cutoff = self.env.context.get('forwardport_updated_before') \
+        cutoff = getattr(builtins, 'forwardport_updated_before', None) \
               or fields.Datetime.to_string(datetime.datetime.now() - DEFAULT_DELTA)
         cutoff_dt = fields.Datetime.from_string(cutoff)
 
@@ -501,8 +502,6 @@ stderr:
             pr_ids = {p.id for p in prs}
             for pr in prs:
                 pr_ids.discard(pr.parent_id.id)
-            print(source, prs, [p.parent_id for p in prs],
-                  '\n\t->', pr_ids, flush=True)
             for pr in (p for p in prs if p.id in pr_ids):
                 self.env.ref('runbot_merge.forwardport.reminder')._send(
                     repository=pr.repository,
