@@ -355,7 +355,14 @@ def render_full_table(pr, branches, repos, batches):
                 for p in ps['prs']:
                     pr = p['pr']
                     attached = attached and p['attached']
-                    sub = ": staging failed" if pr.error else ""
+
+                    if pr.staging_id:
+                        sub = ": is staged"
+                    elif pr.error:
+                        sub = ": staging failed"
+                    else:
+                        sub = ""
+
                     lines = [
                         Line([Text(
                             f"#{p['number']}{sub}",
@@ -366,7 +373,7 @@ def render_full_table(pr, branches, repos, batches):
                     ]
 
                     # no need for details if closed or in error
-                    if not (p['closed'] or pr.error):
+                    if pr.state not in ('merged', 'closed', 'error') and not pr.staging_id:
                         if pr.draft:
                             lines.append(Line([boxes[False], Text("is in draft", font, error)]))
                         lines.extend([
