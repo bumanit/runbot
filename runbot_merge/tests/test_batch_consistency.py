@@ -106,14 +106,14 @@ def test_inconsistent_target(env, project, make_repo2, users, page, config):
         pr_other = repo1.make_pr(head='something_else', target='master')
 
     with repo2:
-        repo2.make_commits(None, Commit("a", tree={"a": "a"}), ref='heads/master')
-        repo2.make_commits(None, Commit("a", tree={"a": "a"}), ref='heads/other')
+        [m] = repo2.make_commits(None, Commit("a", tree={"a": "a"}), ref='heads/master')
+        repo2.make_ref("heads/other", m)
         repo2.make_commits('master', Commit('b', tree={"b": "b"}), ref='heads/a_pr')
         pr2 = repo2.make_pr(head='a_pr', target='master')
 
     with repo3:
-        repo3.make_commits(None, Commit("a", tree={"a": "a"}), ref='heads/master')
-        repo3.make_commits(None, Commit("a", tree={"a": "a"}), ref='heads/other')
+        [m] = repo3.make_commits(None, Commit("a", tree={"a": "a"}), ref='heads/master')
+        repo3.make_ref("heads/other", m)
         repo3.make_commits('master', Commit('b', tree={"b": "b"}), ref='heads/a_pr')
         pr3 = repo3.make_pr(head='a_pr', target='master')
 
@@ -171,7 +171,7 @@ Inconsistent targets:
     env.run_crons()
     assert not pr1_id.blocked
     assert not pr2_id.blocked
-    assert b.blocked
+    assert b.blocked == "Multiple target branches: 'other, master'"
     assert env['runbot_merge.stagings'].search_count([]) == 0
 
     act = pr2_id.button_split()
