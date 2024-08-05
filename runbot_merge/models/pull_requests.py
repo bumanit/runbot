@@ -13,7 +13,7 @@ from functools import reduce
 from operator import itemgetter
 from typing import Optional, Union, List, Iterator, Tuple
 
-import psycopg2
+import psycopg2.errors
 import sentry_sdk
 import werkzeug
 from markupsafe import Markup
@@ -1934,25 +1934,30 @@ class Commit(models.Model):
         PRs = self.env['runbot_merge.pull_requests']
         # chances are low that we'll have more than one commit
         for c in self.search([('to_check', '=', True)]):
+            sha = c.sha
+            pr = PRs.search([('head', '=', sha)])
+            stagings = Stagings.search([
+                ('head_ids.sha', '=', sha),
+                ('state', '=', 'pending'),
+                ('target.project_id.staging_statuses', '=', True),
+            ])
             try:
                 c.to_check = False
-                pr = PRs.search([('head', '=', c.sha)])
+                self.flush(['to_check'], c)
                 if pr:
-                    self.env.cr.precommit.data['change-message'] =\
-                        f"statuses changed on {c.sha}"
                     pr._validate(c.statuses)
 
-                stagings = Stagings.search([
-                    ('head_ids.sha', '=', c.sha),
-                    ('state', '=', 'pending'),
-                    ('target.project_id.staging_statuses', '=', True),
-                ])
                 if stagings:
                     stagings._notify(c)
+            except psycopg2.errors.SerializationFailure:
+                _logger.info("Failed to apply commit %s (%s): serialization failure", c, sha)
+                self.env.cr.rollback()
             except Exception:
-                _logger.exception("Failed to apply commit %s (%s)", c, c.sha)
+                _logger.exception("Failed to apply commit %s (%s)", c, sha)
                 self.env.cr.rollback()
             else:
+                self.env.cr.precommit.data['change-message'] = \
+                    f"statuses changed on {sha}"
                 self.env.cr.commit()
 
     _sql_constraints = [
