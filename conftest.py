@@ -326,6 +326,7 @@ class DbDict(dict):
             f.write(db)
             f.flush()
             os.fsync(f.fileno())
+            subprocess.run(['psql', db, '-c', "UPDATE ir_cron SET nextcall = 'infinity'"])
 
         return db
 
