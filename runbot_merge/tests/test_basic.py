@@ -3158,7 +3158,7 @@ class TestReviewing:
         assert prx.comments == [
             (users['reviewer'], 'hansen r+'),
             seen(env, prx, users),
-            (users['user'], "@{} you can't review+. Skill issue.".format(users['reviewer'])),
+            (users['user'], "@{} you can't review+.".format(users['reviewer'])),
         ]
 
     def test_self_review_success(self, env, repo, users, config):

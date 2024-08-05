@@ -269,7 +269,7 @@ class Parser:
             if handler:
                 yield handler(self)
             elif '!' in token:
-                raise CommandError("skill issue, noob")
+                raise CommandError("no need to scream")
             else:
                 raise CommandError(f"unknown command {token!r}")
 

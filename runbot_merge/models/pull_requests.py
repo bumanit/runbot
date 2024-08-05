@@ -947,7 +947,7 @@ For your own safety I've ignored *everything in your entire comment*.
                     msg = "you can't set a forward-port limit."
                 # NO!
                 case _:
-                    msg = f"you can't {command}. Skill issue."
+                    msg = f"you can't {command}."
             if msg is not None:
                 rejections.append(msg)
 
