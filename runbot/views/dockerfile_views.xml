@@ -21,12 +21,14 @@
               <notebook>
                 <page string="Layers">
                   <field name="layer_ids">
-                    <tree>
+                    <tree default_order="sequence,id">
                       <field name="sequence" widget="handle"/>
-                      <field name="rendered" decoration-it="layer_type in ('reference_layer', 'reference_file')" decoration-bg-info="layer_type == 'template'" decoration-bg-success="layer_type == 'raw'"/>
+                      <field name="rendered" decoration-it="layer_type in ('reference_layer', 'reference_file')" decoration-bg-info="layer_type == 'template' or (layer_type == 'reference_layer' and (packages or values))" decoration-bg-success="layer_type == 'raw'"/>
                       <field name="reference_count" string="#" decoration="True" decoration-bg-danger="referencing_dockerlayer_ids" decoration-bg-warning="reference_count != 0"/>
                       <field name="referencing_dockerlayer_ids" column_invisible="True"/>
                       <field name="layer_type" column_invisible="True"/>
+                      <field name="packages" column_invisible="True"/>
+                      <field name="values" column_invisible="True"/>
                     </tree>
                   </field>
                 </page>
@@ -148,9 +150,11 @@
           <field name="dockerfile_id"/>
           <field name="layer_type"/>
           <field name="referencing_dockerlayer_ids" column_invisible="True"/>
+          <field name="packages" column_invisible="True"/>
+          <field name="values" column_invisible="True"/>
           <field name="reference_count" string="#refs" decoration-danger="referencing_dockerlayer_ids" decoration-warning="reference_count != 0"/>
           <field name="all_referencing_dockerlayer_ids" string="#referencing" widget="many2many_tags"/>
-          <field name="rendered" decoration-warning="layer_type in ('reference_layer', 'reference_file')" decoration-info="layer_type == 'template'" decoration-success="layer_type == 'raw'"/>
+          <field name="rendered" decoration-warning="layer_type in ('reference_layer', 'reference_file')" decoration-info="layer_type == 'template' or (layer_type == 'reference_layer' and (packages or values))" decoration-success="layer_type == 'raw'"/>
         </tree>
       </field>
     </record>
