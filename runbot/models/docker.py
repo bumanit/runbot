@@ -21,7 +21,7 @@ class DockerLayer(models.Model):
     _name = 'runbot.docker_layer'
     _inherit = 'mail.thread'
     _description = "Docker layer"
-    _order = 'sequence, id'
+    _order = 'sequence,id'
 
     name = fields.Char("Name", required=True)
     sequence = fields.Integer("Sequence", default=100, tracking=True)
@@ -41,7 +41,7 @@ class DockerLayer(models.Model):
     referencing_dockerlayer_ids = fields.One2many('runbot.docker_layer', 'reference_docker_layer_id', string='Layers referencing this one direcly', readonly=True)
     all_referencing_dockerlayer_ids = fields.One2many('runbot.docker_layer', compute="_compute_references", string='Layers referencing this one', readonly=True)
     reference_count = fields.Integer('Number of references', compute='_compute_references')
-    has_xml_id = fields.Boolean(compute='_compute_has_xml_id', store=True)
+    has_xml_id = fields.Boolean(compute='_compute_has_xml_id')
 
     @api.depends('referencing_dockerlayer_ids', 'dockerfile_id.referencing_dockerlayer_ids')
     def _compute_references(self):

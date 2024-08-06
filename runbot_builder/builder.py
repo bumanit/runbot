@@ -20,13 +20,18 @@ class BuilderClient(RunbotClient):
             for repo in self.env['runbot.repo'].search([('mode', '!=', 'disabled')]):
                 repo._update(force=True)
 
+        self.last_docker_update = None
+
     def loop_turn(self):
+        last_docker_update = max(self.env['runbot.dockerfile'].search([('to_build', '=', True)]).mapped('write_date'))
+        if self.count == 1 or self.last_docker_update != last_docker_update:
+            self.host._docker_build()
+            self.last_docker_update = last_docker_update
         if self.count == 1:  # cleanup at second iteration
             self.env['runbot.runbot']._source_cleanup()
             self.env['runbot.build']._local_cleanup()
             self.env['runbot.runbot']._docker_cleanup()
             self.host._set_psql_conn_count()
-            self.host._docker_build()
             self.env['runbot.repo']._update_git_config()
             self.env.cr.commit()
             self.git_gc()
