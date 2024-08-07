@@ -850,8 +850,7 @@ class BuildResult(models.Model):
             ro_volumes[f'/data/build/{dest}'] = source
         if 'image_tag' not in kwargs:
             kwargs.update({'image_tag': self.params_id.dockerfile_id.image_tag})
-        if kwargs['image_tag'] != 'odoo:DockerDefault':
-            self._log('Preparing', 'Using Dockerfile Tag %s' % kwargs['image_tag'])
+        self._log('Preparing', 'Using Dockerfile Tag [%s](/runbot/dockerfile/tag/%s)' % (kwargs['image_tag'], kwargs['image_tag']), log_type='markdown')
         containers_memory_limit = self.env['ir.config_parameter'].sudo().get_param('runbot.runbot_containers_memory', 0)
         if containers_memory_limit and 'memory' not in kwargs:
             kwargs['memory'] = int(float(containers_memory_limit) * 1024 ** 3)

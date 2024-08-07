@@ -42,6 +42,11 @@ admin_passwd=running_master_password</field>
         <field name="value"></field>
     </record>
 
+    <record model="ir.config_parameter" id="runbot.runbot_dockerfile_public_by_default">
+        <field name="key">runbot.runbot_dockerfile_public_by_default</field>
+        <field name="value"></field>
+    </record>
+
     <record model="ir.config_parameter" id="runbot.runbot_is_base_regex">
         <field name="key">runbot.runbot_is_base_regex</field>
         <field name="value">^((master)|(saas-)?\d+\.\d+)$</field>

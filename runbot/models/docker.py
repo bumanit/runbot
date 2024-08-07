@@ -140,7 +140,9 @@ class Dockerfile(models.Model):
     referencing_dockerlayer_ids = fields.One2many('runbot.docker_layer', 'reference_dockerfile_id', string='Layers referencing this one')
     use_count = fields.Integer('Used count', compute="_compute_use_count", store=True)
     # maybe we should have global values here? branch version, chrome version, ... then use a os layer when possible (jammy, ...)
-    # we could also have a variant param, to use the version image in a specific trigger? Add a layer or change a param? 
+    # we could also have a variant param, to use the version image in a specific trigger? Add a layer or change a param?
+
+    public_visibility = fields.Boolean('Public', default=lambda self: self.env['ir.config_parameter'].sudo().get_param('runbot.runbot_dockerfile_public_by_default'), help="Dockerfile is public and can be accessed by anyone with /runbot/dockerfile route")
 
     _sql_constraints = [('runbot_dockerfile_name_unique', 'unique(name)', 'A Dockerfile with this name already exists')]
 
