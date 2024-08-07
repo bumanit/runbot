@@ -3,14 +3,14 @@ Test cases for updating PRs during after the forward-porting process after the
 initial merge has succeeded (and forward-porting has started)
 """
 import re
-import sys
 
 import pytest
 
-from utils import seen, re_matches, Commit, make_basic, to_pr
+from utils import seen, matches, Commit, make_basic, to_pr
 
 
-def test_update_pr(env, config, make_repo, users):
+@pytest.mark.parametrize("merge_parent", [False, True])
+def test_update_pr(env, config, make_repo, users, merge_parent) -> None:
     """ Even for successful cherrypicks, it's possible that e.g. CI doesn't
     pass or the reviewer finds out they need to update the code.
 
@@ -18,6 +18,14 @@ def test_update_pr(env, config, make_repo, users):
     only this one and its dependent should be updated?
     """
     prod, _ = make_basic(env, config, make_repo)
+    # create a branch d from c so we can have 3 forward ports PRs, not just 2,
+    # for additional checks
+    env['runbot_merge.project'].search([]).write({
+        'branch_ids': [(0, 0, {'name': 'd', 'sequence': 40})]
+    })
+    with prod:
+        prod.make_commits('c', Commit('1111', tree={'i': 'a'}), ref='heads/d')
+
     with prod:
         [p_1] = prod.make_commits(
             'a',
@@ -25,11 +33,22 @@ def test_update_pr(env, config, make_repo, users):
             ref='heads/hugechange'
         )
         pr = prod.make_pr(target='a', head='hugechange')
-        prod.post_status(p_1, 'success', 'legal/cla')
-        prod.post_status(p_1, 'success', 'ci/runbot')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
+        prod.post_status(p_1, 'success', 'legal/cla')
+        prod.post_status(p_1, 'failure', 'ci/runbot')
     env.run_crons()
+
+    assert pr.comments == [
+        (users['reviewer'], 'hansen r+'),
+        seen(env, pr, users),
+        (users['user'], "@{user} @{reviewer} 'ci/runbot' failed on this reviewed PR.".format_map(users)),
+    ]
+
+    with prod:
+        prod.post_status(p_1, 'success', 'ci/runbot')
+    env.run_crons()
+
     with prod:
         prod.post_status('staging.a', 'success', 'legal/cla')
         prod.post_status('staging.a', 'success', 'ci/runbot')
@@ -40,7 +59,7 @@ def test_update_pr(env, config, make_repo, users):
     pr0_id, pr1_id = env['runbot_merge.pull_requests'].search([], order='number')
 
     fp_intermediate = (users['user'], '''\
-This PR targets b and is part of the forward-port chain. Further PRs will be created up to c.
+This PR targets b and is part of the forward-port chain. Further PRs will be created up to d.
 
 More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 ''')
@@ -100,15 +119,6 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 
     assert pr1_id.head == new_c != pr1_head, "the FP PR should be updated"
     assert not pr1_id.parent_id, "the FP PR should be detached from the original"
-    assert pr1_remote.comments == [
-        seen(env, pr1_remote, users),
-        fp_intermediate, ci_warning, ci_warning,
-        (users['user'], "@%s @%s this PR was modified / updated and has become a normal PR. "
-                        "It should be merged the normal way (via @%s)" % (
-            users['user'], users['reviewer'],
-            pr1_id.repository.project_id.github_prefix
-        )),
-    ], "users should be warned that the PR has become non-FP"
     # NOTE: should the followup PR wait for pr1 CI or not?
     assert pr2_id.head != pr2_head
     assert pr2_id.parent_id == pr1_id, "the followup PR should still be linked"
@@ -124,6 +134,69 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         'h': 'a',
         'x': '5'
     }, "the followup FP should also have the update"
+
+    with prod:
+        prod.post_status(pr2_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr2_id.head, 'success', 'legal/cla')
+    env.run_crons()
+
+    pr2 = prod.get_pr(pr2_id.number)
+    if merge_parent:
+        with prod:
+            pr2.post_comment('hansen r+', config['role_reviewer']['token'])
+        env.run_crons()
+        with prod:
+            prod.post_status('staging.c', 'success', 'ci/runbot')
+            prod.post_status('staging.c', 'success', 'legal/cla')
+        env.run_crons()
+        assert pr2_id.state == 'merged'
+
+    _0, _1, _2, pr3_id = env['runbot_merge.pull_requests'].search([], order='number')
+    assert pr3_id.parent_id == pr2_id
+    # don't bother updating heads (?)
+    pr3_id.write({'parent_id': False, 'detach_reason': "testing"})
+    # pump feedback messages
+    env.run_crons()
+
+    pr3 = prod.get_pr(pr3_id.number)
+    assert pr3.comments == [
+        seen(env, pr3, users),
+        (users['user'], f"""\
+@{users['user']} @{users['reviewer']} this PR targets d and is the last of the forward-port chain containing:
+* {pr2_id.display_name}
+
+To merge the full chain, use
+> @hansen r+
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+"""),
+        (users['user'], f"@{users['user']} @{users['reviewer']} this PR was "
+                        f"modified / updated and has become a normal PR. It "
+                        f"must be merged directly."
+        )
+    ]
+
+    assert pr2.comments[:2] == [
+        seen(env, pr2, users),
+        (users['user'], """\
+This PR targets c and is part of the forward-port chain. Further PRs will be created up to d.
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+"""),
+    ]
+
+    if merge_parent:
+        assert pr2.comments[2:] == [
+            (users['reviewer'], "hansen r+"),
+        ]
+    else:
+        assert pr2.comments[2:] == [
+            (users['user'], f"@{users['user']} @{users['reviewer']} child PR "
+                            f"{pr3_id.display_name} was modified / updated and has "
+                            f"become a normal PR. This PR (and any of its parents) "
+                            f"will need to be merged independently as approvals "
+                            f"won't cross."),
+        ]
 
 def test_update_merged(env, make_repo, config, users):
     """ Strange things happen when an FP gets closed / merged but then its
@@ -151,9 +224,7 @@ def test_update_merged(env, make_repo, config, users):
     with prod:
         prod.make_ref('heads/d', prod.commit('c').id)
     env['runbot_merge.project'].search([]).write({
-        'branch_ids': [(0, 0, {
-            'name': 'd', 'sequence': 40, 'fp_target': True,
-        })]
+        'branch_ids': [(0, 0, {'name': 'd', 'sequence': 40})]
     })
 
     with prod:
@@ -250,11 +321,12 @@ def test_duplicate_fw(env, make_repo, setreviewers, config, users):
         'github_token': config['github']['token'],
         'github_prefix': 'hansen',
         'fp_github_token': config['github']['token'],
+        'fp_github_name': 'herbert',
         'branch_ids': [
-            (0, 0, {'name': 'master', 'sequence': 0, 'fp_target': True}),
-            (0, 0, {'name': 'v3', 'sequence': 1, 'fp_target': True}),
-            (0, 0, {'name': 'v2', 'sequence': 2, 'fp_target': True}),
-            (0, 0, {'name': 'v1', 'sequence': 3, 'fp_target': True}),
+            (0, 0, {'name': 'master', 'sequence': 0}),
+            (0, 0, {'name': 'v3', 'sequence': 1}),
+            (0, 0, {'name': 'v2', 'sequence': 2}),
+            (0, 0, {'name': 'v1', 'sequence': 3}),
         ],
         'repo_ids': [
             (0, 0, {
@@ -265,6 +337,7 @@ def test_duplicate_fw(env, make_repo, setreviewers, config, users):
         ]
     })
     setreviewers(*proj.repo_ids)
+    env['runbot_merge.events_sources'].create({'repository': repo.name})
 
     # create a PR in v1, merge it, then create all 3 ports
     with repo:
@@ -304,7 +377,7 @@ def test_duplicate_fw(env, make_repo, setreviewers, config, users):
     with repo:
         repo.make_commits('v2', Commit('c0', tree={'z': 'b'}), ref=prv2.ref, make=False)
     env.run_crons()
-    assert pr_ids.mapped('state') == ['merged', 'opened', 'validated', 'validated']
+    assert pr_ids.mapped('state') == ['merged', 'opened', 'opened', 'opened']
     assert repo.read_tree(repo.commit(prv2_id.head)) == {'f': 'c', 'h': 'a', 'z': 'b'}
     assert repo.read_tree(repo.commit(prv3_id.head)) == {'f': 'd', 'i': 'a', 'z': 'b'}
     assert repo.read_tree(repo.commit(prmaster_id.head)) == {'f': 'e', 'z': 'b'}
@@ -372,12 +445,12 @@ def test_subsequent_conflict(env, make_repo, config, users):
     assert repo.read_tree(repo.commit(pr3_id.head)) == {
         'f': 'c',
         'g': 'a',
-        'h': re_matches(r'''<<<\x3c<<< HEAD
+        'h': matches('''<<<\x3c<<< $$
 a
-|||||||| parent of [\da-f]{7,}.*
+||||||| $$
 =======
 conflict!
->>>\x3e>>> [\da-f]{7,}.*
+>>>\x3e>>> $$
 '''),
         'x': '0',
     }
@@ -397,18 +470,13 @@ conflict!
     # 1. link to status page
     # 2. forward-port chain thing
     assert repo.get_pr(pr3_id.number).comments[2:] == [
-        (users['user'], re_matches(f'''\
+        (users['user'], f'''\
 @{users['user']} @{users['reviewer']} WARNING: the update of {pr2_id.display_name} to {pr2_id.head} has caused a \
 conflict in this pull request, data may have been lost.
 
 stdout:
-```.*?
-CONFLICT \(add/add\): Merge conflict in h.*?
 ```
-
-stderr:
-```
-\\d{{2}}:\\d{{2}}:\\d{{2}}.\\d+ .* {pr2_id.head}
-error: could not apply [0-9a-f]+\\.\\.\\. newfiles
-''', re.DOTALL))
+Auto-merging h
+CONFLICT (add/add): Merge conflict in h
+```'''),
     ]

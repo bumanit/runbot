@@ -1,4 +1,11 @@
-# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+import datetime
+import select
+import shutil
+import threading
+from typing import Optional
+
 """
 Configuration:
 
@@ -46,6 +53,7 @@ import collections
 import configparser
 import contextlib
 import copy
+import fcntl
 import functools
 import http.client
 import itertools
@@ -64,7 +72,6 @@ import warnings
 import xmlrpc.client
 from contextlib import closing
 
-import psutil
 import pytest
 import requests
 
@@ -88,11 +95,23 @@ def pytest_addoption(parser):
              "blow through the former); localtunnel has no rate-limiting but "
              "the servers are way less reliable")
 
+def is_manager(config):
+    return not hasattr(config, 'workerinput')
 
-# noinspection PyUnusedLocal
 def pytest_configure(config):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mergebot_test_utils'))
+    config.addinivalue_line(
+        "markers",
+        "expect_log_errors(reason): allow and require tracebacks in the log",
+    )
 
+def pytest_unconfigure(config):
+    if not is_manager(config):
+        return
+
+    for c in config._tmp_path_factory.getbasetemp().iterdir():
+        if c.is_file() and c.name.startswith('template-'):
+            subprocess.run(['dropdb', '--if-exists', c.read_text(encoding='utf-8')])
 
 @pytest.fixture(scope='session', autouse=True)
 def _set_socket_timeout():
@@ -143,6 +162,14 @@ def rolemap(request, config):
 
 @pytest.fixture
 def partners(env, config, rolemap):
+    """This specifically does not create partners for ``user`` and ``other``
+    so they can be generated on-interaction, as "external" users.
+
+    The two differ in that ``user`` has ownership of the org and can manage
+    repos there, ``other`` is completely unrelated to anything so useful to
+    check for interaction where the author only has read access to the reference
+    repositories.
+    """
     m = {}
     for role, u in rolemap.items():
         if role in ('user', 'other'):
@@ -187,6 +214,7 @@ def tunnel(pytestconfig, port):
     if tunnel == '':
         yield f'http://localhost:{port}'
     elif tunnel == 'ngrok':
+        own = None
         web_addr = 'http://localhost:4040/api'
         addr = 'localhost:%d' % port
         # try to find out if ngrok is running, and if it's not attempt
@@ -195,13 +223,9 @@ def tunnel(pytestconfig, port):
             # FIXME: this is for xdist to avoid workers running ngrok at the
             #        exact same time, use lockfile instead
             time.sleep(random.SystemRandom().randint(1, 10))
-            # FIXME: use config file so we can set web_addr to something else
-            #        than localhost:4040 (otherwise we can't disambiguate
-            #        between the ngrok we started and an ngrok started by
-            #        some other user)
             requests.get(web_addr)
         except requests.exceptions.ConnectionError:
-            subprocess.Popen(NGROK_CLI, stdout=subprocess.DEVNULL)
+            own = subprocess.Popen(NGROK_CLI, stdout=subprocess.DEVNULL)
             for _ in range(5):
                 time.sleep(1)
                 with contextlib.suppress(requests.exceptions.ConnectionError):
@@ -213,8 +237,8 @@ def tunnel(pytestconfig, port):
         requests.post(f'{web_addr}/tunnels', json={
             'name': str(port),
             'proto': 'http',
-            'bind_tls': True, # only https
             'addr': addr,
+            'schemes': ['https'],
             'inspect': True,
         }).raise_for_status()
 
@@ -242,17 +266,14 @@ def tunnel(pytestconfig, port):
                     raise TimeoutError("ngrok tunnel deletion failed")
 
                 r = requests.get(f'{web_addr}/tunnels')
+                assert r.ok, f'{r.reason} {r.text}'
                 # there are still tunnels in the list -> bail
-                if r.ok and r.json()['tunnels']:
+                if not own or r.json()['tunnels']:
                     return
 
-                # ngrok is broken or all tunnels have been shut down -> try to
-                # find and kill it (but only if it looks a lot like we started it)
-                for p in psutil.process_iter():
-                    if p.name() == 'ngrok' and p.cmdline() == NGROK_CLI:
-                        p.terminate()
-                        break
-                return
+                # no more tunnels and we started ngrok -> try to kill it
+                own.terminate()
+                own.wait(30)
         else:
             raise TimeoutError("ngrok tunnel creation failed (?)")
     elif tunnel == 'localtunnel':
@@ -269,39 +290,73 @@ def tunnel(pytestconfig, port):
         raise ValueError("Unsupported %s tunnel method" % tunnel)
 
 class DbDict(dict):
-    def __init__(self, adpath):
+    def __init__(self, adpath, shared_dir):
         super().__init__()
         self._adpath = adpath
+        self._shared_dir = shared_dir
     def __missing__(self, module):
-        self[module] = db = 'template_%s' % uuid.uuid4()
-        with tempfile.TemporaryDirectory() as d:
+        with contextlib.ExitStack() as atexit:
+            f = atexit.enter_context(os.fdopen(os.open(
+                self._shared_dir / f'template-{module}',
+                os.O_CREAT | os.O_RDWR
+            ), mode="r+", encoding='utf-8'))
+            fcntl.lockf(f, fcntl.LOCK_EX)
+            atexit.callback(fcntl.lockf, f, fcntl.LOCK_UN)
+
+            db = f.read()
+            if db:
+                self[module] = db
+                return db
+
+            d = (self._shared_dir / f'shared-{module}')
+            d.mkdir()
+            self[module] = db = 'template_%s' % uuid.uuid4()
             subprocess.run([
                 'odoo', '--no-http',
-                '--addons-path', self._adpath,
-                '-d', db, '-i', module + ',auth_oauth',
+                *(['--addons-path', self._adpath] if self._adpath else []),
+                '-d', db, '-i', module + ',saas_worker,auth_oauth',
                 '--max-cron-threads', '0',
                 '--stop-after-init',
-                '--log-level', 'warn'
+                '--log-level', 'warn',
+                '--log-handler', 'py.warnings:ERROR',
             ],
                 check=True,
-                env={**os.environ, 'XDG_DATA_HOME': d}
+                env={**os.environ, 'XDG_DATA_HOME': str(d)}
             )
+            f.write(db)
+            f.flush()
+            os.fsync(f.fileno())
+            subprocess.run(['psql', db, '-c', "UPDATE ir_cron SET nextcall = 'infinity'"])
+
         return db
 
 @pytest.fixture(scope='session')
-def dbcache(request):
+def dbcache(request, tmp_path_factory, addons_path):
     """ Creates template DB once per run, then just duplicates it before
     starting odoo and running the testcase
     """
-    dbs = DbDict(request.config.getoption('--addons-path'))
+    shared_dir = tmp_path_factory.getbasetemp()
+    if not is_manager(request.config):
+        # xdist workers get a subdir as their basetemp, so we need to go one
+        # level up to deref it
+        shared_dir = shared_dir.parent
+
+    dbs = DbDict(addons_path, shared_dir)
     yield dbs
-    for db in dbs.values():
-        subprocess.run(['dropdb', db], check=True)
 
 @pytest.fixture
-def db(request, module, dbcache):
+def db(request, module, dbcache, tmpdir):
+    template_db = dbcache[module]
     rundb = str(uuid.uuid4())
-    subprocess.run(['createdb', '-T', dbcache[module], rundb], check=True)
+    subprocess.run(['createdb', '-T', template_db, rundb], check=True)
+    share = tmpdir.mkdir('share')
+    shutil.copytree(
+        str(dbcache._shared_dir / f'shared-{module}'),
+        str(share),
+        dirs_exist_ok=True,
+    )
+    (share / 'Odoo' / 'filestore' / template_db).rename(
+        share / 'Odoo' / 'filestore' / rundb)
 
     yield rundb
 
@@ -323,12 +378,14 @@ def wait_for_server(db, port, proc, mod, timeout=120):
 
         try:
             uid = xmlrpc.client.ServerProxy(
-                'http://localhost:{}/xmlrpc/2/common'.format(port))\
-                .authenticate(db, 'admin', 'admin', {})
+                f'http://localhost:{port}/xmlrpc/2/common'
+            ).authenticate(db, 'admin', 'admin', {
+                'base_location': f"http://localhost:{port}",
+            })
             mods = xmlrpc.client.ServerProxy(
-                'http://localhost:{}/xmlrpc/2/object'.format(port))\
-                .execute_kw(
-                    db, uid, 'admin', 'ir.module.module', 'search_read', [
+                f'http://localhost:{port}/xmlrpc/2/object'
+            ).execute_kw(
+                db, uid, 'admin', 'ir.module.module', 'search_read', [
                     [('name', '=', mod)], ['state']
                 ])
             if mods and mods[0].get('state') == 'installed':
@@ -344,39 +401,123 @@ def port():
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
 
+@pytest.fixture
+def page(port):
+    with requests.Session() as s:
+        def get(url):
+            r = s.get('http://localhost:{}{}'.format(port, url))
+            r.raise_for_status()
+            return r.content
+        yield get
+
 @pytest.fixture(scope='session')
 def dummy_addons_path():
     with tempfile.TemporaryDirectory() as dummy_addons_path:
         mod = pathlib.Path(dummy_addons_path, 'saas_worker')
         mod.mkdir(0o700)
-        (mod / '__init__.py').write_bytes(b'')
+        (mod / '__init__.py').write_text('''\
+import builtins
+import logging
+import threading
+
+import psycopg2
+
+import odoo
+from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
+
+
+class Base(models.AbstractModel):
+    _inherit = 'base'
+
+    def run_crons(self):
+        builtins.forwardport_merged_before = self.env.context.get('forwardport_merged_before')
+        builtins.forwardport_updated_before = self.env.context.get('forwardport_updated_before')
+        self.env['ir.cron']._process_jobs(self.env.cr.dbname)
+        del builtins.forwardport_updated_before
+        del builtins.forwardport_merged_before
+        return True
+
+
+class IrCron(models.Model):
+    _inherit = 'ir.cron'
+
+    @classmethod
+    def _process_jobs(cls, db_name):
+        t = threading.current_thread()
+        try:
+            db = odoo.sql_db.db_connect(db_name)
+            t.dbname = db_name
+            with db.cursor() as cron_cr:
+                # FIXME: override `_get_all_ready_jobs` to directly lock the cron?
+                while jobs := next((
+                    job
+                    for j in cls._get_all_ready_jobs(cron_cr)
+                    if (job := cls._acquire_one_job(cron_cr, (j['id'],)))
+                ), None):
+                    # take into account overridings of _process_job() on that database
+                    registry = odoo.registry(db_name)
+                    registry[cls._name]._process_job(db, cron_cr, job)
+                    cron_cr.commit()
+
+        except psycopg2.ProgrammingError as e:
+            raise
+        except Exception:
+            _logger.warning('Exception in cron:', exc_info=True)
+        finally:
+            if hasattr(t, 'dbname'):
+                del t.dbname
+''', encoding='utf-8')
         (mod / '__manifest__.py').write_text(pprint.pformat({
             'name': 'dummy saas_worker',
             'version': '1.0',
         }), encoding='utf-8')
         (mod / 'util.py').write_text("""\
-def from_role(_):
+def from_role(*_, **__):
     return lambda fn: fn
 """, encoding='utf-8')
 
         yield dummy_addons_path
 
+@pytest.fixture(scope='session')
+def addons_path(request, dummy_addons_path):
+    return ','.join(map(str, filter(None, [
+        request.config.getoption('--addons-path'),
+        dummy_addons_path,
+    ])))
+
 @pytest.fixture
-def server(request, db, port, module, dummy_addons_path, tmpdir):
+def server(request, db, port, module, addons_path, tmpdir):
     log_handlers = [
         'odoo.modules.loading:WARNING',
+        'py.warnings:ERROR',
     ]
     if not request.config.getoption('--log-github'):
         log_handlers.append('github_requests:WARNING')
 
-    addons_path = ','.join(map(str, [
-        request.config.getoption('--addons-path'),
-        dummy_addons_path,
-    ]))
-
     cov = []
     if request.config.getoption('--coverage'):
-        cov = ['coverage', 'run', '-p', '--source=odoo.addons.runbot_merge,odoo.addons.forwardport', '--branch']
+        cov = [
+            'coverage', 'run',
+            '-p', '--branch',
+            '--source=odoo.addons.runbot_merge,odoo.addons.forwardport',
+            '--context', request.node.nodeid,
+            '-m',
+        ]
+
+    r, w = os.pipe2(os.O_NONBLOCK)
+    buf = bytearray()
+    def _move(inpt=r, output=sys.stdout.fileno()):
+        while p.poll() is None:
+            readable, _, _ = select.select([inpt], [], [], 1)
+            if readable:
+                r = os.read(inpt, 4096)
+                if not r:
+                    break
+                os.write(output, r)
+                buf.extend(r)
+        os.close(inpt)
 
     p = subprocess.Popen([
         *cov,
@@ -385,25 +526,46 @@ def server(request, db, port, module, dummy_addons_path, tmpdir):
         '-d', db,
         '--max-cron-threads', '0', # disable cron threads (we're running crons by hand)
         *itertools.chain.from_iterable(('--log-handler', h) for h in log_handlers),
-    ], env={
+    ], stderr=w, env={
         **os.environ,
         # stop putting garbage in the user dirs, and potentially creating conflicts
         # TODO: way to override this with macOS?
-        'XDG_DATA_HOME': str(tmpdir.mkdir('share')),
+        'XDG_DATA_HOME': str(tmpdir / 'share'),
         'XDG_CACHE_HOME': str(tmpdir.mkdir('cache')),
     })
+    os.close(w)
+    # start the reader thread here so `_move` can read `p` without needing
+    # additional handholding
+    threading.Thread(target=_move, daemon=True).start()
 
     try:
         wait_for_server(db, port, p, module)
 
-        yield p
+        yield p, buf
     finally:
         p.terminate()
         p.wait(timeout=30)
 
 @pytest.fixture
-def env(port, server, db, default_crons):
-    yield Environment(port, db, default_crons)
+def env(request, port, server, db):
+    yield Environment(port, db)
+    if request.node.get_closest_marker('expect_log_errors'):
+        if b"Traceback (most recent call last):" not in server[1]:
+            pytest.fail("should have found error in logs.")
+    else:
+        if b"Traceback (most recent call last):" in server[1]:
+            pytest.fail("unexpected error in logs, fix, or mark function as `expect_log_errors` to require.")
+
+@pytest.fixture
+def reviewer_admin(env, partners):
+    env['res.users'].create({
+        'partner_id': partners['reviewer'].id,
+        'login': 'reviewer',
+        'groups_id': [
+            (4, env.ref("base.group_user").id, 0),
+            (4, env.ref("runbot_merge.group_admin").id, 0),
+        ],
+    })
 
 def check(response):
     assert response.ok, response.text or response.reason
@@ -412,6 +574,10 @@ def check(response):
 # to) break the existing local tests
 @pytest.fixture
 def make_repo(capsys, request, config, tunnel, users):
+    """Fixtures which creates a repository on the github side, plugs webhooks
+    in, and registers the repository for deletion on cleanup (unless
+    ``--no-delete`` is set)
+    """
     owner = config['github']['owner']
     github = requests.Session()
     github.headers['Authorization'] = 'token %s' % config['github']['token']
@@ -489,7 +655,6 @@ def _rate_limited(req):
         if not q.ok and q.headers.get('X-RateLimit-Remaining') == '0':
             reset = int(q.headers['X-RateLimit-Reset'])
             delay = max(0, round(reset - time.time() + 1.0))
-            print("Hit rate limit, sleeping for", delay, "seconds")
             time.sleep(delay)
             continue
         break
@@ -504,6 +669,9 @@ class Repo:
         self._repos = repos
         self.hook = False
         repos.append(self)
+
+    def __repr__(self):
+        return f'<conftest.Repo {self.name}>'
 
     @property
     def owner(self):
@@ -542,14 +710,13 @@ class Repo:
         assert self.hook
         r = self._session.get(
             'https://api.github.com/repos/{}/hooks'.format(self.name))
-        response = r.json()
-        assert 200 <= r.status_code < 300, response
-        [hook] = response
+        assert 200 <= r.status_code < 300, r.text
+        [hook] = r.json()
 
         r = self._session.patch('https://api.github.com/repos/{}/hooks/{}'.format(self.name, hook['id']), json={
             'config': {**hook['config'], 'secret': secret},
         })
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
 
     def get_ref(self, ref):
         # differs from .commit(ref).id for the sake of assertion error messages
@@ -574,7 +741,7 @@ class Repo:
         assert res['object']['type'] == 'commit'
         return res['object']['sha']
 
-    def commit(self, ref):
+    def commit(self, ref: str) -> Commit:
         if not re.match(r'[0-9a-f]{40}', ref):
             if not ref.startswith(('heads/', 'refs/heads/')):
                 ref = 'refs/heads/' + ref
@@ -585,12 +752,11 @@ class Repo:
             ref = 'refs/' + ref
 
         r = self._session.get('https://api.github.com/repos/{}/commits/{}'.format(self.name, ref))
-        response = r.json()
-        assert 200 <= r.status_code < 300, response
+        assert 200 <= r.status_code < 300, r.text
 
-        return self._commit_from_gh(response)
+        return self._commit_from_gh(r.json())
 
-    def _commit_from_gh(self, gh_commit):
+    def _commit_from_gh(self, gh_commit: dict) -> Commit:
         c = gh_commit['commit']
         return Commit(
             id=gh_commit['sha'],
@@ -608,14 +774,14 @@ class Repo:
         :rtype: Dict[str, str]
         """
         r = self._session.get('https://api.github.com/repos/{}/git/trees/{}'.format(self.name, commit.tree))
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
 
         # read tree's blobs
         tree = {}
         for t in r.json()['tree']:
             assert t['type'] == 'blob', "we're *not* doing recursive trees in test cases"
             r = self._session.get('https://api.github.com/repos/{}/git/blobs/{}'.format(self.name, t['sha']))
-            assert 200 <= r.status_code < 300, r.json()
+            assert 200 <= r.status_code < 300, r.text
             tree[t['path']] = base64.b64decode(r.json()['content']).decode()
 
         return tree
@@ -645,7 +811,7 @@ class Repo:
             'required_pull_request_reviews': None,
             'restrictions': None,
         })
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
 
     # FIXME: remove this (runbot_merge should use make_commits directly)
     def make_commit(self, ref, message, author, committer=None, tree=None, wait=True):
@@ -748,7 +914,16 @@ class Repo:
         )).raise_for_status()
         return PR(self, number)
 
-    def make_pr(self, *, title=None, body=None, target, head, draft=False, token=None):
+    def make_pr(
+            self,
+            *,
+            title: Optional[str] = None,
+            body: Optional[str] = None,
+            target: str,
+            head: str,
+            draft: bool = False,
+            token: Optional[str] = None
+    ) -> PR:
         assert self.hook
         self.hook = 2
 
@@ -781,10 +956,9 @@ class Repo:
             },
             headers=headers,
         )
-        pr = r.json()
-        assert 200 <= r.status_code < 300, pr
+        assert 200 <= r.status_code < 300, r.text
 
-        return PR(self, pr['number'])
+        return PR(self, r.json()['number'])
 
     def post_status(self, ref, status, context='default', **kw):
         assert self.hook
@@ -795,7 +969,7 @@ class Repo:
             'context': context,
             **kw
         })
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
 
     def is_ancestor(self, sha, of):
         return any(c['sha'] == sha for c in self.log(of))
@@ -806,7 +980,7 @@ class Repo:
                 'https://api.github.com/repos/{}/commits'.format(self.name),
                 params={'sha': ref_or_sha, 'page': page}
             )
-            assert 200 <= r.status_code < 300, r.json()
+            assert 200 <= r.status_code < 300, r.text
             yield from r.json()
             if not r.links.get('next'):
                 return
@@ -874,7 +1048,7 @@ class PR:
             'https://api.github.com/repos/{}/pulls/{}'.format(self.repo.name, self.number),
             headers=caching
         )
-        assert r.ok, r.json()
+        assert r.ok, r.text
         if r.status_code == 304:
             return previous
         contents, caching = self._cache = r.json(), {}
@@ -919,7 +1093,7 @@ class PR:
     @property
     def comments(self):
         r = self.repo._session.get('https://api.github.com/repos/{}/issues/{}/comments'.format(self.repo.name, self.number))
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
         return [Comment(c) for c in r.json()]
 
     @property
@@ -936,7 +1110,7 @@ class PR:
             json={'body': body},
             headers=headers,
         )
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
         return r.json()['id']
 
     def edit_comment(self, cid, body, token=None):
@@ -949,7 +1123,7 @@ class PR:
             json={'body': body},
             headers=headers
         )
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
         wait_for_hook()
 
     def delete_comment(self, cid, token=None):
@@ -961,7 +1135,7 @@ class PR:
             'https://api.github.com/repos/{}/issues/comments/{}'.format(self.repo.name, cid),
             headers=headers
         )
-        assert r.status_code == 204, r.json()
+        assert r.status_code == 204, r.text
 
     def _set_prop(self, prop, value, token=None):
         assert self.repo.hook
@@ -985,7 +1159,7 @@ class PR:
             self.repo.name,
             self.number,
         ))
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
         info = r.json()
 
         repo = self.repo
@@ -1006,7 +1180,7 @@ class PR:
             json={'body': body, 'event': state,},
             headers=headers
         )
-        assert 200 <= r.status_code < 300, r.json()
+        assert 200 <= r.status_code < 300, r.text
 
 PRBranch = collections.namedtuple('PRBranch', 'repo branch')
 class LabelsProxy(collections.abc.MutableSet):
@@ -1017,7 +1191,7 @@ class LabelsProxy(collections.abc.MutableSet):
     def _labels(self):
         pr = self._pr
         r = pr.repo._session.get('https://api.github.com/repos/{}/issues/{}/labels'.format(pr.repo.name, pr.number))
-        assert r.ok, r.json()
+        assert r.ok, r.text
         return {label['name'] for label in r.json()}
 
     def __repr__(self):
@@ -1043,14 +1217,14 @@ class LabelsProxy(collections.abc.MutableSet):
         r = pr.repo._session.post('https://api.github.com/repos/{}/issues/{}/labels'.format(pr.repo.name, pr.number), json={
             'labels': [label]
         })
-        assert r.ok, r.json()
+        assert r.ok, r.text
 
     def discard(self, label):
         pr = self._pr
         assert pr.repo.hook
         r = pr.repo._session.delete('https://api.github.com/repos/{}/issues/{}/labels/{}'.format(pr.repo.name, pr.number, label))
         # discard should do nothing if the item didn't exist in the set
-        assert r.ok or r.status_code == 404, r.json()
+        assert r.ok or r.status_code == 404, r.text
 
     def update(self, *others):
         pr = self._pr
@@ -1059,14 +1233,13 @@ class LabelsProxy(collections.abc.MutableSet):
         r = pr.repo._session.post('https://api.github.com/repos/{}/issues/{}/labels'.format(pr.repo.name, pr.number), json={
             'labels': list(set(itertools.chain.from_iterable(others)))
         })
-        assert r.ok, r.json()
+        assert r.ok, r.text
 
 class Environment:
-    def __init__(self, port, db, default_crons=()):
+    def __init__(self, port, db):
         self._uid = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/common'.format(port)).authenticate(db, 'admin', 'admin', {})
         self._object = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/object'.format(port))
         self._db = db
-        self._default_crons = default_crons
 
     def __call__(self, model, method, *args, **kwargs):
         return self._object.execute_kw(
@@ -1078,17 +1251,30 @@ class Environment:
     def __getitem__(self, name):
         return Model(self, name)
 
+    def ref(self, xid, raise_if_not_found=True):
+        model, obj_id = self(
+            'ir.model.data', 'check_object_reference',
+            *xid.split('.', 1),
+            raise_on_access_error=raise_if_not_found
+        )
+        return Model(self, model, [obj_id]) if obj_id else None
+
+
     def run_crons(self, *xids, **kw):
-        crons = xids or self._default_crons
-        print('running crons', crons, file=sys.stderr)
+        crons = xids or ['runbot_merge.check_linked_prs_status']
+        cron_ids = []
         for xid in crons:
-            t0 = time.time()
-            print('\trunning cron', xid, '...', file=sys.stderr)
+            if xid is None:
+                continue
+
             model, cron_id = self('ir.model.data', 'check_object_reference', *xid.split('.', 1))
             assert model == 'ir.cron', "Expected {} to be a cron, got {}".format(xid, model)
-            self('ir.cron', 'method_direct_trigger', [cron_id], **kw)
-            print('\tdone %.3fs' % (time.time() - t0), file=sys.stderr)
-        print('done', file=sys.stderr)
+            cron_ids.append(cron_id)
+        if cron_ids:
+            self('ir.cron', 'write', cron_ids, {
+                'nextcall': (datetime.datetime.utcnow() - datetime.timedelta(seconds=30)).isoformat(" ", "seconds")
+            }, **kw)
+        self('base', 'run_crons', [], **kw)
         # sleep for some time as a lot of crap may have happened (?)
         wait_for_hook()
 
@@ -1117,6 +1303,9 @@ class Model:
     def __len__(self):
         return len(self._ids)
 
+    def __hash__(self):
+        return hash((self._model, frozenset(self._ids)))
+
     def __eq__(self, other):
         if not isinstance(other, Model):
             return NotImplemented
@@ -1144,9 +1333,13 @@ class Model:
 
     # because sorted is not xmlrpc-compatible (it doesn't downgrade properly)
     def sorted(self, field):
-        rs = self.read([field])
-        rs.sort(key=lambda r: r[field])
-        return Model(self._env, self._model, [r['id'] for r in rs])
+        fn = field if callable(field) else lambda r: r[field]
+
+        return Model(self._env, self._model, (
+            id
+            for record in sorted(self, key=fn)
+            for id in record.ids
+        ))
 
     def __getitem__(self, index):
         if isinstance(index, str):

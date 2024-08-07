@@ -50,6 +50,7 @@ def test_basic(env, project, make_repo, users, setreviewers, config):
         'status_ids': [(0, 0, {'context': 'l/int'})]
     })
     setreviewers(*project.repo_ids)
+    env['runbot_merge.events_sources'].create({'repository': repo.name})
     # "other" can override the lint
     env['res.partner'].create({
         'name': config['role_other'].get('name', 'Other'),
@@ -89,7 +90,7 @@ def test_basic(env, project, make_repo, users, setreviewers, config):
         (users['reviewer'], 'hansen r+'),
         seen(env, pr, users),
         (users['reviewer'], 'hansen override=l/int'),
-        (users['user'], "I'm sorry, @{}: you are not allowed to override this status.".format(users['reviewer'])),
+        (users['user'], "@{} you are not allowed to override 'l/int'.".format(users['reviewer'])),
         (users['other'], "hansen override=l/int"),
     ]
     assert pr_id.statuses == '{}'
@@ -110,6 +111,7 @@ def test_multiple(env, project, make_repo, users, setreviewers, config):
         'status_ids': [(0, 0, {'context': 'l/int'}), (0, 0, {'context': 'c/i'})]
     })
     setreviewers(*project.repo_ids)
+    env['runbot_merge.events_sources'].create({'repository': repo.name})
     # "other" can override the lints
     env['res.partner'].create({
         'name': config['role_other'].get('name', 'Other'),
@@ -174,6 +176,7 @@ def test_no_repository(env, project, make_repo, users, setreviewers, config):
         'status_ids': [(0, 0, {'context': 'l/int'})]
     })
     setreviewers(*project.repo_ids)
+    env['runbot_merge.events_sources'].create({'repository': repo.name})
     # "other" can override the lint
     env['res.partner'].create({
         'name': config['role_other'].get('name', 'Other'),

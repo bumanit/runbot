@@ -1,8 +1,11 @@
+import random
 import re
 import time
 from operator import itemgetter
 
-from utils import make_basic, Commit, validate_all, re_matches, seen, REF_PATTERN, to_pr
+import pytest
+
+from utils import make_basic, Commit, validate_all, matches, seen, REF_PATTERN, to_pr
 
 
 def test_conflict(env, config, make_repo, users):
@@ -16,7 +19,7 @@ def test_conflict(env, config, make_repo, users):
     project = env['runbot_merge.project'].search([])
     project.write({
         'branch_ids': [
-            (0, 0, {'name': 'd', 'sequence': 40, 'fp_target': True})
+            (0, 0, {'name': 'd', 'sequence': 40})
         ]
     })
 
@@ -50,6 +53,7 @@ def test_conflict(env, config, make_repo, users):
     assert prc_id.state == 'opened'
 
     p = prod.commit(p_0)
+    prc = prod.get_pr(prc_id.number)
     c = prod.commit(prc_id.head)
     assert c.author == p.author
     # ignore date as we're specifically not keeping the original's
@@ -58,14 +62,36 @@ def test_conflict(env, config, make_repo, users):
     assert prod.read_tree(c) == {
         'f': 'c',
         'g': 'a',
-        'h': re_matches(r'''<<<\x3c<<< HEAD
+        'h': matches('''<<<\x3c<<< $$
 a
-|||||||| parent of [\da-f]{7,}.*
+||||||| $$
 =======
 xxx
->>>\x3e>>> [\da-f]{7,}.*
+>>>\x3e>>> $$
 '''),
     }
+    assert prc.comments == [
+        seen(env, prc, users),
+        (users['user'],
+f'''@{users['user']} @{users['reviewer']} cherrypicking of pull request {pra_id.display_name} failed.
+
+stdout:
+```
+Auto-merging h
+CONFLICT (add/add): Merge conflict in h
+
+```
+
+Either perform the forward-port manually (and push to this branch, proceeding as usual) or close this PR (maybe?).
+
+In the former case, you may want to edit this PR message as well.
+
+:warning: after resolving this conflict, you will need to merge it via @{project.github_prefix}.
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+''')
+    ]
+
     prb = prod.get_pr(prb_id.number)
     assert prb.comments == [
         seen(env, prb, users),
@@ -76,13 +102,12 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 '''),
         (users['user'], """@%s @%s the next pull request (%s) is in conflict. \
 You can merge the chain up to here by saying
-> @%s r+
+> @hansen r+
 
 More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 """ % (
             users['user'], users['reviewer'],
             prc_id.display_name,
-            project.fp_github_name
         ))
     ]
 
@@ -147,6 +172,94 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         'h': 'xxx',
         'i': 'a',
     }
+
+def test_massive_conflict(env, config, make_repo):
+    """If the conflict is large enough, the commit message may exceed ARG_MAX
+     and trigger E2BIG.
+    """
+    # CONFLICT (modify/delete): <file> deleted in <commit> (<title>) and modified in HEAD.  Version HEAD of <file> left in tree.
+    #
+    # 107 + 2 * len(filename) + len(title) per conflicting file.
+    # - filename: random.randbytes(10).hex() -> 20
+    # - title: random.randbytes(20).hex() -> 40
+    # -> 701 (!) files
+
+    files = []
+    while len(files) < 1500:
+        files.append(random.randbytes(10).hex())
+
+    # region setup
+    project = env['runbot_merge.project'].create({
+        'name': "thing",
+        'github_token': config['github']['token'],
+        'github_prefix': 'hansen',
+        'fp_github_token': config['github']['token'],
+        'fp_github_name': 'herbert',
+        'branch_ids': [
+            (0, 0, {'name': 'a', 'sequence': 100}),
+            (0, 0, {'name': 'b', 'sequence': 80}),
+        ],
+    })
+
+    repo = make_repo("repo")
+    env['runbot_merge.events_sources'].create({'repository': repo.name})
+
+    repo_id = env['runbot_merge.repository'].create({
+        'project_id': project.id,
+        'name': repo.name,
+        'required_statuses': "default",
+        'fp_remote_target': repo.name,
+        'group_id': False,
+    })
+    env['res.partner'].search([
+        ('github_login', '=', config['role_reviewer']['user'])
+    ]).write({
+        'review_rights': [(0, 0, {'repository_id': repo_id.id, 'review': True})]
+    })
+
+    with repo:
+        # create branch with a ton of empty files
+        repo.make_commits(
+            None,
+            Commit(
+                random.randbytes(20).hex(),
+                tree=dict.fromkeys(files, "xoxo"),
+            ),
+            ref='heads/a',
+        )
+
+        # removes all those files in the next branch
+        repo.make_commits(
+            'a',
+            Commit(
+                random.randbytes(20).hex(),
+                tree=dict.fromkeys(files, "content!"),
+            ),
+            ref='heads/b',
+        )
+    # endregion setup
+
+    with repo:
+        # update all the files
+        repo.make_commits(
+            'a',
+            Commit(random.randbytes(20).hex(), tree={'a': '1'}),
+            Commit(random.randbytes(20).hex(), tree={'x': '1'}, reset=True),
+            ref='heads/change',
+        )
+        pr = repo.make_pr(target='a', head='change')
+        repo.post_status('refs/heads/change', 'success')
+        pr.post_comment('hansen rebase-ff r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with repo:
+        repo.post_status('staging.a', 'success')
+    env.run_crons()
+
+    # we don't actually need more, the bug crashes the forward port entirely so
+    # the PR is never even created
+    _pra_id, _prb_id = env['runbot_merge.pull_requests'].search([], order='number')
+
 
 def test_conflict_deleted(env, config, make_repo):
     prod, other = make_basic(env, config, make_repo)
@@ -269,6 +382,7 @@ def test_multiple_commits_same_authorship(env, config, make_repo):
     assert get(c.author) == get(author)
     assert get(c.committer) == get(committer)
 
+
 def test_multiple_commits_different_authorship(env, config, make_repo, users, rolemap):
     """ When a PR has multiple commits by different authors, the resulting
     (squashed) conflict commit should have an empty email
@@ -316,11 +430,11 @@ def test_multiple_commits_different_authorship(env, config, make_repo, users, ro
     c = prod.commit(pr2_id.head)
     assert len(c.parents) == 1
     get = itemgetter('name', 'email')
-    rm = rolemap['user']
-    assert get(c.author) == (rm['login'], ''), \
+    bot = pr_id.repository.project_id.fp_github_name
+    assert get(c.author) == (bot, ''), \
         "In a multi-author PR, the squashed conflict commit should have the " \
         "author set to the bot but an empty email"
-    assert get(c.committer) == (rm['login'], '')
+    assert get(c.committer) == (bot, '')
 
     assert re.match(r'''<<<\x3c<<< HEAD
 b
@@ -345,7 +459,7 @@ b
 
     assert pr2.comments == [
         seen(env, pr2, users),
-        (users['user'], re_matches(r'@%s @%s .*CONFLICT' % (users['user'], users['reviewer']), re.DOTALL)),
+        (users['user'], matches('@%s @%s $$CONFLICT' % (users['user'], users['reviewer']))),
         (users['reviewer'], 'hansen r+'),
         (users['user'], f"@{users['user']} @{users['reviewer']} unable to stage: "
                         "All commits must have author and committer email, "

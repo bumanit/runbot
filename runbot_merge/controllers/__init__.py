@@ -3,6 +3,7 @@ import hmac
 import logging
 import json
 
+import sentry_sdk
 import werkzeug.exceptions
 
 from odoo.http import Controller, request, route
@@ -14,44 +15,126 @@ from .. import utils, github
 _logger = logging.getLogger(__name__)
 
 class MergebotController(Controller):
+    @route('/runbot_merge/stagings', auth='none', type='json')
+    def stagings_for_commits(self, commits=None, heads=None):
+        Stagings = request.env(user=1)['runbot_merge.stagings'].sudo()
+        if commits:
+            stagings = Stagings.for_commits(*commits)
+        elif heads:
+            stagings = Stagings.for_heads(*heads)
+        else:
+            raise ValueError('Must receive one of "commits" or "heads" kwarg')
+
+        return stagings.ids
+
+    @route('/runbot_merge/stagings/<int:staging>', auth='none', type='json')
+    def prs_for_staging(self, staging):
+        staging = request.env(user=1)['runbot_merge.stagings'].browse(staging)
+        return [
+            batch.prs.mapped(lambda p: {
+                'name': p.display_name,
+                'repository': p.repository.name,
+                'number': p.number,
+            })
+            for batch in staging.sudo().batch_ids
+        ]
+
+    @route('/runbot_merge/stagings/<int:from_staging>/<int:to_staging>', auth='none', type='json')
+    def prs_for_stagings(self, from_staging, to_staging, include_from=True, include_to=True):
+        Stagings = request.env(user=1, context={"active_test": False})['runbot_merge.stagings']
+        from_staging = Stagings.browse(from_staging)
+        to_staging = Stagings.browse(to_staging)
+        if from_staging.target != to_staging.target:
+            raise ValueError(f"Stagings must have the same target branch, found {from_staging.target.name} and {to_staging.target.name}")
+        if from_staging.id >= to_staging.id:
+            raise ValueError("first staging must be older than second staging")
+
+        stagings = Stagings.search([
+            ('target', '=', to_staging.target.id),
+            ('state', '=', 'success'),
+            ('id', '>=' if include_from else '>', from_staging.id),
+            ('id', '<=' if include_to else '<', to_staging.id),
+        ], order="id asc")
+
+        return [
+            {
+                'staging': staging.id,
+                'prs': [
+                    batch.prs.mapped(lambda p: {
+                        'name': p.display_name,
+                        'repository': p.repository.name,
+                        'number': p.number,
+                    })
+                    for batch in staging.batch_ids
+                ]
+            }
+            for staging in stagings
+        ]
+
+
     @route('/runbot_merge/hooks', auth='none', type='json', csrf=False, methods=['POST'])
     def index(self):
         req = request.httprequest
         event = req.headers['X-Github-Event']
+        with sentry_sdk.configure_scope() as scope:
+            if scope.transaction:
+                # only in 1.8.0 (or at least 1.7.2
+                if hasattr(scope, 'set_transaction_name'):
+                    scope.set_transaction_name(f"webhook {event}")
+                else: # but our servers use 1.4.3
+                    scope.transaction = f"webhook {event}"
 
         github._gh.info(self._format(req))
+
+        data = request.get_json_data()
+        repo = data.get('repository', {}).get('full_name')
+        env = request.env(user=1)
+
+        source = repo and env['runbot_merge.events_sources'].search([('repository', '=', repo)])
+        if not source:
+            _logger.warning(
+                "Ignored hook %s to unknown source repository %s",
+                req.headers.get("X-Github-Delivery"),
+                repo,
+            )
+            return werkzeug.exceptions.Forbidden()
+        elif secret := source.secret:
+            signature = 'sha256=' + hmac.new(secret.strip().encode(), req.get_data(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(signature, req.headers.get('X-Hub-Signature-256', '')):
+                _logger.warning(
+                    "Ignored hook %s with incorrect signature on %s: got %s expected %s, in:\n%s",
+                    req.headers.get('X-Github-Delivery'),
+                    repo,
+                    req.headers.get('X-Hub-Signature-256'),
+                    signature,
+                    req.headers,
+                )
+                return werkzeug.exceptions.Forbidden()
+        elif req.headers.get('X-Hub-Signature-256'):
+            _logger.info("No secret for %s but received a signature in:\n%s", repo, req.headers)
+        else:
+            _logger.info("No secret or signature for %s", repo)
 
         c = EVENTS.get(event)
         if not c:
             _logger.warning('Unknown event %s', event)
             return 'Unknown event {}'.format(event)
 
-        repo = request.jsonrequest['repository']['full_name']
-        env = request.env(user=1)
-
-        secret = env['runbot_merge.repository'].search([
-            ('name', '=', repo),
-        ]).project_id.secret
-        if secret:
-            signature = 'sha1=' + hmac.new(secret.encode('ascii'), req.get_data(), hashlib.sha1).hexdigest()
-            if not hmac.compare_digest(signature, req.headers.get('X-Hub-Signature', '')):
-                _logger.warning("Ignored hook with incorrect signature %s",
-                             req.headers.get('X-Hub-Signature'))
-                return werkzeug.exceptions.Forbidden()
-
-        return c(env, request.jsonrequest)
+        sentry_sdk.set_context('webhook', data)
+        return c(env, data)
 
     def _format(self, request):
-        return """<= {r.method} {r.full_path}
+        return """{r.method} {r.full_path}
 {headers}
+
 {body}
-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\
 """.format(
             r=request,
             headers='\n'.join(
                 '\t%s: %s' % entry for entry in request.headers.items()
             ),
-            body=utils.shorten(request.get_data(as_text=True).strip(), 400)
+            body=request.get_data(as_text=True),
         )
 
 def handle_pr(env, event):
@@ -99,7 +182,7 @@ def handle_pr(env, event):
         return env['runbot_merge.pull_requests'].search([
             ('repository', '=', repo.id),
             ('number', '=', pr['number']),
-            ('target', '=', target.id),
+            # ('target', '=', target.id),
         ])
     # edition difficulty: pr['base']['ref] is the *new* target, the old one
     # is at event['change']['base']['ref'] (if the target changed), so edition
@@ -143,18 +226,26 @@ def handle_pr(env, event):
 
     message = None
     if not branch:
-        message = f"This PR targets the un-managed branch {r}:{b}, it needs to be retargeted before it can be merged."
+        message = env.ref('runbot_merge.handle.branch.unmanaged')._format(
+            repository=r,
+            branch=b,
+            event=event,
+        )
         _logger.info("Ignoring event %s on PR %s#%d for un-managed branch %s",
                      event['action'], r, pr['number'], b)
     elif not branch.active:
-        message = f"This PR targets the disabled branch {r}:{b}, it needs to be retargeted before it can be merged."
+        message = env.ref('runbot_merge.handle.branch.inactive')._format(
+            repository=r,
+            branch=b,
+            event=event,
+        )
     if message and event['action'] not in ('synchronize', 'closed'):
         feedback(message=message)
 
     if not branch:
         return "Not set up to care about {}:{}".format(r, b)
 
-    headers = request.httprequest.headers if request.httprequest else {}
+    headers = request.httprequest.headers if request else {}
     _logger.info(
         "%s: %s#%s (%s) (by %s, delivery %s by %s)",
         event['action'],
@@ -164,6 +255,11 @@ def handle_pr(env, event):
         headers.get('X-Github-Delivery'),
         headers.get('User-Agent'),
      )
+    sender = env['res.partner'].search([('github_login', '=', event['sender']['login'])], limit=1)
+    if not sender:
+        sender = env['res.partner'].create({'name': event['sender']['login'], 'github_login': event['sender']['login']})
+    env.cr.precommit.data['change-author'] = sender.id
+
     if event['action'] == 'opened':
         author_name = pr['user']['login']
         author = env['res.partner'].search([('github_login', '=', author_name)], limit=1)
@@ -172,7 +268,7 @@ def handle_pr(env, event):
         pr_obj = env['runbot_merge.pull_requests']._from_gh(pr)
         return "Tracking PR as {}".format(pr_obj.id)
 
-    pr_obj = env['runbot_merge.pull_requests']._get_or_schedule(r, pr['number'])
+    pr_obj = env['runbot_merge.pull_requests']._get_or_schedule(r, pr['number'], closing=event['action'] == 'closed')
     if not pr_obj:
         _logger.info("webhook %s on unknown PR %s#%s, scheduled fetch", event['action'], repo.name, pr['number'])
         return "Unknown PR {}:{}, scheduling fetch".format(repo.name, pr['number'])
@@ -203,7 +299,8 @@ def handle_pr(env, event):
         )
 
         pr_obj.write({
-            'state': 'opened',
+            'reviewed_by': False,
+            'error': False,
             'head': pr['head']['sha'],
             'squash': pr['commits'] == 1,
         })
@@ -227,26 +324,25 @@ def handle_pr(env, event):
                 oldstate,
             )
             return 'Closed {}'.format(pr_obj.display_name)
-        else:
-            _logger.warning(
-                '%s tried to close %s (state=%s)',
-                event['sender']['login'],
-                pr_obj.display_name,
-                oldstate,
-            )
-            return 'Ignored: could not lock rows (probably being merged)'
+
+        _logger.info(
+            '%s tried to close %s (state=%s) but locking failed',
+            event['sender']['login'],
+            pr_obj.display_name,
+            oldstate,
+        )
+        return 'Ignored: could not lock rows (probably being merged)'
 
     if event['action'] == 'reopened' :
         if pr_obj.state == 'merged':
             feedback(
                 close=True,
-                message="@%s ya silly goose you can't reopen a merged PR." % event['sender']['login']
+                message=env.ref('runbot_merge.handle.pr.merged')._format(event=event),
             )
-
-        if pr_obj.state == 'closed':
+        elif pr_obj.closed:
             _logger.info('%s reopening %s', event['sender']['login'], pr_obj.display_name)
             pr_obj.write({
-                'state': 'opened',
+                'closed': False,
                 # updating the head triggers a revalidation
                 'head': pr['head']['sha'],
                 'squash': pr['commits'] == 1,
@@ -279,6 +375,7 @@ def handle_status(env, event):
                 statuses = c.statuses::jsonb || EXCLUDED.statuses::jsonb
             WHERE NOT c.statuses::jsonb @> EXCLUDED.statuses::jsonb
     """, [event['sha'], status_value])
+    env.ref("runbot_merge.process_updated_commits")._trigger()
 
     return 'ok'
 
@@ -290,6 +387,10 @@ def handle_comment(env, event):
     issue = event['issue']['number']
     author = event['comment']['user']['login']
     comment = event['comment']['body']
+    if len(comment) > 5000:
+        _logger.warning('comment(%s): %s %s#%s => ignored (%d characters)', event['comment']['html_url'], author, repo, issue, len(comment))
+        return "ignored: too big"
+
     _logger.info('comment[%s]: %s %s#%s %r', event['action'], author, repo, issue, comment)
     if event['action'] != 'created':
         return "Ignored: action (%r) is not 'created'" % event['action']
@@ -301,6 +402,9 @@ def handle_review(env, event):
     pr = event['pull_request']['number']
     author = event['review']['user']['login']
     comment = event['review']['body'] or ''
+    if len(comment) > 5000:
+        _logger.warning('comment(%s): %s %s#%s => ignored (%d characters)', event['review']['html_url'], author, repo, pr, len(comment))
+        return "ignored: too big"
 
     _logger.info('review[%s]: %s %s#%s %r', event['action'], author, repo, pr, comment)
     if event['action'] != 'submitted':
@@ -311,7 +415,7 @@ def handle_review(env, event):
         target=event['pull_request']['base']['ref'])
 
 def handle_ping(env, event):
-    print("Got ping! {}".format(event['zen']))
+    _logger.info("Got ping! %s", event['zen'])
     return "pong"
 
 EVENTS = {

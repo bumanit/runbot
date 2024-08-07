@@ -5,9 +5,11 @@ source branches).
 When preparing a staging, we simply want to ensure branch-matched PRs
 are staged concurrently in all repos
 """
-import json
+import functools
+import operator
 import time
 import xmlrpc.client
+from itertools import repeat
 
 import pytest
 import requests
@@ -17,43 +19,46 @@ from utils import seen, get_partner, pr_page, to_pr, Commit
 
 
 @pytest.fixture
-def repo_a(project, make_repo, setreviewers):
+def repo_a(env, project, make_repo, setreviewers):
     repo = make_repo('a')
-    r = project.env['runbot_merge.repository'].create({
+    r = env['runbot_merge.repository'].create({
         'project_id': project.id,
         'name': repo.name,
-        'required_statuses': 'legal/cla,ci/runbot',
+        'required_statuses': 'default',
         'group_id': False,
     })
     setreviewers(r)
+    env['runbot_merge.events_sources'].create({'repository': r.name})
     return repo
 
 @pytest.fixture
-def repo_b(project, make_repo, setreviewers):
+def repo_b(env, project, make_repo, setreviewers):
     repo = make_repo('b')
-    r = project.env['runbot_merge.repository'].create({
+    r = env['runbot_merge.repository'].create({
         'project_id': project.id,
         'name': repo.name,
-        'required_statuses': 'legal/cla,ci/runbot',
+        'required_statuses': 'default',
         'group_id': False,
     })
     setreviewers(r)
+    env['runbot_merge.events_sources'].create({'repository': r.name})
     return repo
 
 @pytest.fixture
-def repo_c(project, make_repo, setreviewers):
+def repo_c(env, project, make_repo, setreviewers):
     repo = make_repo('c')
-    r = project.env['runbot_merge.repository'].create({
+    r = env['runbot_merge.repository'].create({
         'project_id': project.id,
         'name': repo.name,
-        'required_statuses': 'legal/cla,ci/runbot',
+        'required_statuses': 'default',
         'group_id': False,
     })
     setreviewers(r)
+    env['runbot_merge.events_sources'].create({'repository': r.name})
     return repo
 
 def make_pr(repo, prefix, trees, *, target='master', user,
-            statuses=(('ci/runbot', 'success'), ('legal/cla', 'success')),
+            statuses=(('default', 'success'),),
             reviewer):
     """
     :type repo: fake_github.Repo
@@ -81,27 +86,23 @@ def make_pr(repo, prefix, trees, *, target='master', user,
         pr.post_comment('hansen r+', reviewer)
     return pr
 
-def make_branch(repo, name, message, tree, protect=True):
-    c = repo.make_commit(None, message, None, tree=tree)
-    repo.make_ref('heads/%s' % name, c)
-    if protect:
-        repo.protect(name)
-    return c
 
-def test_stage_one(env, project, repo_a, repo_b, config):
+@pytest.mark.parametrize('uniquifier', [False, True])
+def test_stage_one(env, project, repo_a, repo_b, config, uniquifier):
     """ First PR is non-matched from A => should not select PR from B
     """
+    project.uniquifier = uniquifier
     project.batch_limit = 1
 
     with repo_a:
-        make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
+        repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
         pr_a = make_pr(
             repo_a, 'A', [{'a': 'a_1'}],
             user=config['role_user']['token'],
             reviewer=config['role_reviewer']['token'])
 
     with repo_b:
-        make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+        repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref='heads/master')
         pr_b = make_pr(
             repo_b, 'B', [{'a': 'b_1'}],
             user=config['role_user']['token'],
@@ -113,7 +114,10 @@ def test_stage_one(env, project, repo_a, repo_b, config):
     assert pra_id.state == 'ready'
     assert pra_id.staging_id
     assert repo_a.commit('staging.master').message.startswith('commit_A_00')
-    assert repo_b.commit('staging.master').message.startswith('force rebuild')
+    if uniquifier:
+        assert repo_b.commit('staging.master').message.startswith('force rebuild')
+    else:
+        assert repo_b.commit('staging.master').message == 'initial'
 
     prb_id = to_pr(env, pr_b)
     assert prb_id.state == 'ready'
@@ -126,14 +130,14 @@ def test_stage_match(env, project, repo_a, repo_b, config, page):
     project.batch_limit = 1
 
     with repo_a:
-        make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
+        repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
         prx_a = make_pr(
             repo_a, 'do-a-thing', [{'a': 'a_1'}],
             user=config['role_user']['token'],
             reviewer=config['role_reviewer']['token'],
         )
     with repo_b:
-        make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+        repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref='heads/master')
         prx_b = make_pr(repo_b, 'do-a-thing', [{'a': 'b_1'}],
             user=config['role_user']['token'],
             reviewer=config['role_reviewer']['token'],
@@ -159,7 +163,7 @@ def test_stage_match(env, project, repo_a, repo_b, config, page):
     assert get_related_pr_labels(pr_page(page, prx_a)) == [pr_b.display_name]
     assert get_related_pr_labels(pr_page(page, prx_b)) == [pr_a.display_name]
     with repo_a:
-        repo_a.post_status('staging.master', 'failure', 'legal/cla')
+        repo_a.post_status('staging.master', 'failure')
     env.run_crons()
 
     assert pr_a.state == 'error'
@@ -173,8 +177,7 @@ def test_stage_match(env, project, repo_a, repo_b, config, page):
     assert pr_a.staging_id and pr_b.staging_id
     for repo in [repo_a, repo_b]:
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'success', 'ci/runbot')
+            repo.post_status('staging.master', 'success')
     env.run_crons()
     assert pr_a.state == 'merged'
     assert pr_b.state == 'merged'
@@ -182,7 +185,6 @@ def test_stage_match(env, project, repo_a, repo_b, config, page):
     assert 'Related: {}'.format(pr_b.display_name) in repo_a.commit('master').message
     assert 'Related: {}'.format(pr_a.display_name) in repo_b.commit('master').message
 
-    print(pr_a.batch_ids.read(['staging_id', 'prs']))
     # check that related PRs *still* link to one another after merge
     assert get_related_pr_labels(pr_page(page, prx_a)) == [pr_b.display_name]
     assert get_related_pr_labels(pr_page(page, prx_b)) == [pr_a.display_name]
@@ -195,8 +197,8 @@ def test_different_targets(env, project, repo_a, repo_b, config):
         'branch_ids': [(0, 0, {'name': 'other'})]
     })
     with repo_a:
-        make_branch(repo_a, 'master', 'initial', {'master': 'a_0'})
-        make_branch(repo_a, 'other', 'initial', {'other': 'a_0'})
+        repo_a.make_commits(None, Commit('initial', tree={'master': 'a_0'}), ref='heads/master')
+        repo_a.make_commits(None, Commit('initial', tree={'other': 'a_0'}), ref='heads/other')
         pr_a = make_pr(
             repo_a, 'do-a-thing', [{'mater': 'a_1'}],
             target='master',
@@ -204,8 +206,8 @@ def test_different_targets(env, project, repo_a, repo_b, config):
             reviewer=config['role_reviewer']['token'],
         )
     with repo_b:
-        make_branch(repo_b, 'master', 'initial', {'master': 'b_0'})
-        make_branch(repo_b, 'other', 'initial', {'other': 'b_0'})
+        repo_b.make_commits(None, Commit('initial', tree={'master': 'b_0'}), ref='heads/master')
+        repo_b.make_commits(None, Commit('initial', tree={'other': 'b_0'}), ref='heads/other')
         pr_b = make_pr(
             repo_b, 'do-a-thing', [{'other': 'b_1'}],
             target='other',
@@ -228,8 +230,7 @@ def test_different_targets(env, project, repo_a, repo_b, config):
 
     for r in [repo_a, repo_b]:
         with r:
-            r.post_status('staging.master', 'success', 'legal/cla')
-            r.post_status('staging.master', 'success', 'ci/runbot')
+            r.post_status('staging.master', 'success')
     env.run_crons()
     assert pr_a.state == 'merged'
 
@@ -243,7 +244,7 @@ def test_stage_different_statuses(env, project, repo_a, repo_b, config):
     })
 
     with repo_a:
-        make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
+        repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
         pr_a = make_pr(
             repo_a, 'do-a-thing', [{'a': 'a_1'}],
             user=config['role_user']['token'],
@@ -251,17 +252,16 @@ def test_stage_different_statuses(env, project, repo_a, repo_b, config):
         )
         repo_a.post_status(pr_a.head, 'success', 'foo/bar')
     with repo_b:
-        make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+        repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref='heads/master')
         [c] = repo_b.make_commits(
             'heads/master',
-            repo_b.Commit('some_commit\n\nSee also %s#%d' % (repo_a.name, pr_a.number), tree={'a': 'b_1'}),
+            repo_b.Commit(f'some_commit\n\nSee also {repo_a.name}#{pr_a.number:d}', tree={'a': 'b_1'}),
             ref='heads/do-a-thing'
         )
         pr_b = repo_b.make_pr(
             title="title", body="body", target='master', head='do-a-thing',
             token=config['role_user']['token'])
-        repo_b.post_status(c, 'success', 'ci/runbot')
-        repo_b.post_status(c, 'success', 'legal/cla')
+        repo_b.post_status(c, 'success')
         pr_b.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     # since the labels are the same but the statuses on pr_b are not the
@@ -285,8 +285,7 @@ def test_stage_different_statuses(env, project, repo_a, repo_b, config):
     # do the actual merge to check for the Related header
     for repo in [repo_a, repo_b]:
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'success', 'ci/runbot')
+            repo.post_status('staging.master', 'success')
             repo.post_status('staging.master', 'success', 'foo/bar')
     env.run_crons()
 
@@ -315,14 +314,14 @@ def test_unmatch_patch(env, project, repo_a, repo_b, config):
     """
     project.batch_limit = 1
     with repo_a:
-        make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
+        repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
         pr_a = make_pr(
             repo_a, 'patch-1', [{'a': 'a_1'}],
             user=config['role_user']['token'],
             reviewer=config['role_reviewer']['token'],
         )
     with repo_b:
-        make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+        repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref=f'heads/master')
         pr_b = make_pr(
             repo_b, 'patch-1', [{'a': 'b_1'}],
             user=config['role_user']['token'],
@@ -342,16 +341,16 @@ def test_sub_match(env, project, repo_a, repo_b, repo_c, config):
     """
     project.batch_limit = 1
     with repo_a: # no pr here
-        make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
+        repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
     with repo_b:
-        make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+        repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref='heads/master')
         pr_b = make_pr(
             repo_b, 'do-a-thing', [{'a': 'b_1'}],
             user=config['role_user']['token'],
             reviewer=config['role_reviewer']['token'],
         )
     with repo_c:
-        make_branch(repo_c, 'master', 'initial', {'a': 'c_0'})
+        repo_c.make_commits(None, Commit('initial', tree={'a': 'c_0'}), ref='heads/master')
         pr_c = make_pr(
             repo_c, 'do-a-thing', [{'a': 'c_1'}],
             user=config['role_user']['token'],
@@ -373,14 +372,30 @@ def test_sub_match(env, project, repo_a, repo_b, repo_c, config):
     a_staging = repo_a.commit('staging.master')
     b_staging = repo_b.commit('staging.master')
     c_staging = repo_c.commit('staging.master')
-    assert json.loads(st.heads) == {
-        repo_a.name: a_staging.id,
-        repo_a.name + '^': a_staging.parents[0],
-        repo_b.name: b_staging.id,
-        repo_b.name + '^': b_staging.id,
-        repo_c.name: c_staging.id,
-        repo_c.name + '^': c_staging.id,
-    }
+    assert sorted(st.head_ids.mapped('sha')) == sorted([
+        a_staging.id,
+        b_staging.id,
+        c_staging.id,
+    ])
+    s = env['runbot_merge.stagings'].for_heads(
+        a_staging.id,
+        b_staging.id,
+        c_staging.id,
+    )
+    assert s == list(st.ids)
+
+    assert sorted(st.commit_ids.mapped('sha')) == sorted([
+        a_staging.parents[0],
+        b_staging.id,
+        c_staging.id,
+    ])
+    s = env['runbot_merge.stagings'].for_commits(
+        a_staging.parents[0],
+        b_staging.id,
+        c_staging.id,
+    )
+    assert s == list(st.ids)
+
 
 def test_merge_fail(env, project, repo_a, repo_b, users, config):
     """ In a matched-branch scenario, if merging in one of the linked repos
@@ -389,8 +404,8 @@ def test_merge_fail(env, project, repo_a, repo_b, users, config):
     project.batch_limit = 1
 
     with repo_a, repo_b:
-        make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
-        make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+        repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
+        repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref='heads/master')
 
         # first set of matched PRs
         pr1a = make_pr(
@@ -455,14 +470,14 @@ def test_ff_fail(env, project, repo_a, repo_b, config):
     project.batch_limit = 1
 
     with repo_a, repo_b:
-        root_a = make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
+        [root_a] = repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
         make_pr(
             repo_a, 'do-a-thing', [{'a': 'a_1'}],
             user=config['role_user']['token'],
             reviewer=config['role_reviewer']['token'],
         )
 
-        make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+        repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref=f'heads/master')
         make_pr(
             repo_b, 'do-a-thing', [{'a': 'b_1'}],
             user=config['role_user']['token'],
@@ -476,11 +491,9 @@ def test_ff_fail(env, project, repo_a, repo_b, config):
     assert repo_b.commit('heads/master').id == cn
 
     with repo_a, repo_b:
-        repo_a.post_status('heads/staging.master', 'success', 'ci/runbot')
-        repo_a.post_status('heads/staging.master', 'success', 'legal/cla')
-        repo_b.post_status('heads/staging.master', 'success', 'ci/runbot')
-        repo_b.post_status('heads/staging.master', 'success', 'legal/cla')
-    env.run_crons('runbot_merge.merge_cron', 'runbot_merge.staging_cron')
+        repo_a.post_status('heads/staging.master', 'success')
+        repo_b.post_status('heads/staging.master', 'success')
+    env.run_crons(None)
     assert repo_b.commit('heads/master').id == cn,\
         "B should still be at the conflicting commit"
     assert repo_a.commit('heads/master').id == root_a,\
@@ -498,7 +511,7 @@ class TestCompanionsNotReady:
         """
         project.batch_limit = 1
         with repo_a, repo_b:
-            make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
+            repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
             # pr_a is born ready
             p_a = make_pr(
                 repo_a, 'do-a-thing', [{'a': 'a_1'}],
@@ -506,7 +519,7 @@ class TestCompanionsNotReady:
                 reviewer=config['role_reviewer']['token'],
             )
 
-            make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+            repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref='heads/master')
             p_b = make_pr(
                 repo_b, 'do-a-thing', [{'a': 'b_1'}],
                 user=config['role_user']['token'],
@@ -553,21 +566,21 @@ class TestCompanionsNotReady:
         """
         project.batch_limit = 1
         with repo_a, repo_b, repo_c:
-            make_branch(repo_a, 'master', 'initial', {'f': 'a0'})
+            repo_a.make_commits(None, Commit('initial', tree={'f': 'a0'}), ref='heads/master')
             pr_a = make_pr(
                 repo_a, 'a-thing', [{'f': 'a1'}],
                 user=config['role_user']['token'],
                 reviewer=None,
             )
 
-            make_branch(repo_b, 'master', 'initial', {'f': 'b0'})
+            repo_b.make_commits(None, Commit('initial', tree={'f': 'b0'}), ref='heads/master')
             pr_b = make_pr(
                 repo_b, 'a-thing', [{'f': 'b1'}],
                 user=config['role_user']['token'],
                 reviewer=config['role_reviewer']['token'],
             )
 
-            make_branch(repo_c, 'master', 'initial', {'f': 'c0'})
+            repo_c.make_commits(None, Commit('initial', tree={'f': 'c0'}), ref='heads/master')
             pr_c = make_pr(
                 repo_c, 'a-thing', [{'f': 'c1'}],
                 user=config['role_user']['token'],
@@ -593,21 +606,21 @@ class TestCompanionsNotReady:
         """
         project.batch_limit = 1
         with repo_a, repo_b, repo_c:
-            make_branch(repo_a, 'master', 'initial', {'f': 'a0'})
+            repo_a.make_commits(None, Commit('initial', tree={'f': 'a0'}), ref='heads/master')
             pr_a = make_pr(
                 repo_a, 'a-thing', [{'f': 'a1'}],
                 user=config['role_user']['token'],
                 reviewer=None,
             )
 
-            make_branch(repo_b, 'master', 'initial', {'f': 'b0'})
+            repo_b.make_commits(None, Commit('initial', tree={'f': 'b0'}), ref='heads/master')
             pr_b = make_pr(
                 repo_b, 'a-thing', [{'f': 'b1'}],
                 user=config['role_user']['token'],
                 reviewer=config['role_reviewer']['token'],
             )
 
-            make_branch(repo_c, 'master', 'initial', {'f': 'c0'})
+            repo_c.make_commits(None, Commit('initial', tree={'f': 'c0'}), ref='heads/master')
             pr_c = make_pr(
                 repo_c, 'a-thing', [{'f': 'c1'}],
                 user=config['role_user']['token'],
@@ -619,19 +632,13 @@ class TestCompanionsNotReady:
         assert pr_b.comments == [
             (users['reviewer'], 'hansen r+'),
             seen(env, pr_b, users),
-            (users['user'], "@%s @%s linked pull request(s) %s#%d not ready. Linked PRs are not staged until all of them are ready." % (
-                users['user'], users['reviewer'],
-                repo_a.name, pr_a.number
-            ))
+            (users['user'], f"@{users['user']} @{users['reviewer']} linked pull request(s) {repo_a.name}#{pr_a.number} not ready. Linked PRs are not staged until all of them are ready.")
         ]
         assert pr_c.comments == [
             (users['reviewer'], 'hansen r+'),
             seen(env, pr_c, users),
             (users['user'],
-             "@%s @%s linked pull request(s) %s#%d not ready. Linked PRs are not staged until all of them are ready." % (
-                 users['user'], users['reviewer'],
-                 repo_a.name, pr_a.number
-             ))
+             f"@{users['user']} @{users['reviewer']} linked pull request(s) {repo_a.name}#{pr_a.number} not ready. Linked PRs are not staged until all of them are ready.")
         ]
 
 def test_other_failed(env, project, repo_a, repo_b, users, config):
@@ -640,7 +647,7 @@ def test_other_failed(env, project, repo_a, repo_b, users, config):
     message
     """
     with repo_a, repo_b:
-        make_branch(repo_a, 'master', 'initial', {'a': 'a_0'})
+        repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
         # pr_a is born ready
         pr_a = make_pr(
             repo_a, 'do-a-thing', [{'a': 'a_1'}],
@@ -648,17 +655,15 @@ def test_other_failed(env, project, repo_a, repo_b, users, config):
             reviewer=config['role_reviewer']['token'],
         )
 
-        make_branch(repo_b, 'master', 'initial', {'a': 'b_0'})
+        repo_b.make_commits(None, Commit('initial', tree={'a': 'b_0'}), ref='heads/master')
     env.run_crons()
 
     pr = to_pr(env, pr_a)
     assert pr.staging_id
 
     with repo_a, repo_b:
-        repo_a.post_status('heads/staging.master', 'success', 'legal/cla')
-        repo_a.post_status('heads/staging.master', 'success', 'ci/runbot', target_url="http://example.org/a")
-        repo_b.post_status('heads/staging.master', 'success', 'legal/cla')
-        repo_b.post_status('heads/staging.master', 'failure', 'ci/runbot', target_url="http://example.org/b")
+        repo_a.post_status('heads/staging.master', 'success', target_url="http://example.org/a")
+        repo_b.post_status('heads/staging.master', 'failure', target_url="http://example.org/b")
     env.run_crons()
 
     sth = repo_b.commit('heads/staging.master').id
@@ -667,7 +672,7 @@ def test_other_failed(env, project, repo_a, repo_b, users, config):
     assert pr_a.comments == [
         (users['reviewer'], 'hansen r+'),
         seen(env, pr_a, users),
-        (users['user'], '@%s @%s staging failed: ci/runbot on %s (view more at http://example.org/b)' % (
+        (users['user'], '@%s @%s staging failed: default on %s (view more at http://example.org/b)' % (
             users['user'], users['reviewer'],
             sth
         ))
@@ -681,8 +686,8 @@ class TestMultiBatches:
         project.batch_limit = 3
 
         with repo_a, repo_b:
-            make_branch(repo_a, 'master', 'initial', {'a': 'a0'})
-            make_branch(repo_b, 'master', 'initial', {'b': 'b0'})
+            repo_a.make_commits(None, Commit('initial', tree={'a': 'a0'}), ref='heads/master')
+            repo_b.make_commits(None, Commit('initial', tree={'b': 'b0'}), ref='heads/master')
 
             prs = [(
                 a and make_pr(repo_a, 'batch{}'.format(i), [{'a{}'.format(i): 'a{}'.format(i)}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token']),
@@ -714,8 +719,8 @@ class TestMultiBatches:
         """ If a staging fails, it should get split properly across repos
         """
         with repo_a, repo_b:
-            make_branch(repo_a, 'master', 'initial', {'a': 'a0'})
-            make_branch(repo_b, 'master', 'initial', {'b': 'b0'})
+            repo_a.make_commits(None, Commit('initial', tree={'a': 'a0'}), ref='heads/master')
+            repo_b.make_commits(None, Commit('initial', tree={'b': 'b0'}), ref='heads/master')
 
             prs = [(
                 a and make_pr(repo_a, 'batch{}'.format(i), [{'a{}'.format(i): 'a{}'.format(i)}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token']),
@@ -736,8 +741,7 @@ class TestMultiBatches:
         # mark b.staging as failed -> should create two splits with (0, 1)
         # and (2, 3, 4) and stage the first one
         with repo_b:
-            repo_b.post_status('heads/staging.master', 'success', 'legal/cla')
-            repo_b.post_status('heads/staging.master', 'failure', 'ci/runbot')
+            repo_b.post_status('heads/staging.master', 'failure')
         env.run_crons()
 
         assert not st0.active
@@ -756,33 +760,46 @@ class TestMultiBatches:
         assert sp.mapped('batch_ids.prs') == \
             prs[2][0] | prs[2][1] | prs[3][0] | prs[3][1] | prs[4][0]
 
+@pytest.mark.usefixtures("reviewer_admin")
 def test_urgent(env, repo_a, repo_b, config):
-    """ Either PR of a co-dependent pair being p=0 leads to the entire pair
-    being prioritized
+    """ Either PR of a co-dependent pair being prioritised leads to the entire
+    pair being prioritized
     """
     with repo_a, repo_b:
-        make_branch(repo_a, 'master', 'initial', {'a0': 'a'})
-        make_branch(repo_b, 'master', 'initial', {'b0': 'b'})
+        repo_a.make_commits(None, Commit('initial', tree={'a0': 'a'}), ref='heads/master')
+        repo_b.make_commits(None, Commit('initial', tree={'b0': 'b'}), ref='heads/master')
 
         pr_a = make_pr(repo_a, 'batch', [{'a1': 'a'}, {'a2': 'a'}], user=config['role_user']['token'], reviewer=None, statuses=[])
         pr_b = make_pr(repo_b, 'batch', [{'b1': 'b'}, {'b2': 'b'}], user=config['role_user']['token'], reviewer=None, statuses=[])
-        pr_c = make_pr(repo_a, 'C', [{'c1': 'c', 'c2': 'c'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],)
+        pr_c = make_pr(repo_a, 'C', [{'c1': 'c', 'c2': 'c'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
 
         pr_a.post_comment('hansen rebase-merge', config['role_reviewer']['token'])
-        pr_b.post_comment('hansen rebase-merge p=0', config['role_reviewer']['token'])
+        pr_b.post_comment('hansen rebase-merge alone skipchecks', config['role_reviewer']['token'])
     env.run_crons()
-    # should have batched pr_a and pr_b despite neither being reviewed or
-    # approved
-    p_a, p_b = to_pr(env, pr_a), to_pr(env, pr_b)
-    p_c = to_pr(env, pr_c)
+
+    p_a, p_b, p_c = to_pr(env, pr_a), to_pr(env, pr_b), to_pr(env, pr_c)
+    assert not p_a.blocked
+    assert not p_b.blocked
+
+    assert p_a.staging_id and p_b.staging_id and p_a.staging_id == p_b.staging_id,\
+        "a and b should be staged despite neither beinbg reviewed or approved"
     assert p_a.batch_id and p_b.batch_id and p_a.batch_id == p_b.batch_id,\
         "a and b should have been recognised as co-dependent"
     assert not p_c.staging_id
 
+    with repo_a:
+        pr_a.post_comment('hansen r-', config['role_reviewer']['token'])
+    env.run_crons()
+    assert not p_b.staging_id.active, "should be unstaged"
+    assert p_b.priority == 'alone', "priority should not be affected anymore"
+    assert not p_b.skipchecks, "r- of linked pr should have un-skipcheck-ed this one"
+    assert p_a.blocked
+    assert p_b.blocked
+
 class TestBlocked:
     def test_merge_method(self, env, repo_a, config):
         with repo_a:
-            make_branch(repo_a, 'master', 'initial', {'a0': 'a'})
+            repo_a.make_commits(None, Commit('initial', tree={'a0': 'a'}), ref='heads/master')
 
             pr = make_pr(repo_a, 'A', [{'a1': 'a'}, {'a2': 'a'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],)
         env.run_crons()
@@ -796,33 +813,55 @@ class TestBlocked:
 
     def test_linked_closed(self, env, repo_a, repo_b, config):
         with repo_a, repo_b:
-            make_branch(repo_a, 'master', 'initial', {'a0': 'a'})
-            make_branch(repo_b, 'master', 'initial', {'b0': 'b'})
+            repo_a.make_commits(None, Commit('initial', tree={'a0': 'a'}), ref='heads/master')
+            repo_b.make_commits(None, Commit('initial', tree={'b0': 'b'}), ref='heads/master')
 
-            pr = make_pr(repo_a, 'xxx', [{'a1': 'a'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],)
-            b = make_pr(repo_b, 'xxx', [{'b1': 'b'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'], statuses=[])
+            pr1_a = make_pr(repo_a, 'xxx', [{'a1': 'a'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],)
+            pr1_b = make_pr(repo_b, 'xxx', [{'b1': 'b'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'], statuses=[])
         env.run_crons()
 
-        p = to_pr(env, pr)
-        assert p.blocked
-        with repo_b: b.close()
-        # FIXME: find a way for PR.blocked to depend on linked PR somehow so this isn't needed
-        p.invalidate_cache(['blocked'], [p.id])
-        assert not p.blocked
+        head_a = repo_a.commit('master').id
+        head_b = repo_b.commit('master').id
+        pr1_a_id = to_pr(env, pr1_a)
+        pr1_b_id = to_pr(env, pr1_b)
+        assert pr1_a_id.blocked
+        with repo_b: pr1_b.close()
+        assert not pr1_a_id.blocked
+        assert len(pr1_a_id.batch_id.all_prs) == 2
+        assert pr1_a_id.state == 'ready'
+        assert pr1_b_id.state == 'closed'
+        env.run_crons()
+        assert pr1_a_id.staging_id
+        with repo_a, repo_b:
+            repo_a.post_status('staging.master', 'success')
+            repo_b.post_status('staging.master', 'success')
+        env.run_crons()
+        assert pr1_a_id.state == 'merged'
+        assert pr1_a_id.batch_id.merge_date
+        assert repo_a.commit('master').id != head_a, \
+            "the master of repo A should be updated"
+        assert repo_b.commit('master').id == head_b, \
+            "the master of repo B should not be updated"
+
+        with repo_a:
+            pr2_a = make_pr(repo_a, "xxx", [{'x': 'x'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+        env.run_crons()
+        pr2_a_id = to_pr(env, pr2_a)
+        assert pr2_a_id.batch_id != pr1_a_id.batch_id
+        assert pr2_a_id.label == pr1_a_id.label
+        assert len(pr2_a_id.batch_id.all_prs) == 1
 
     def test_linked_merged(self, env, repo_a, repo_b, config):
         with repo_a, repo_b:
-            make_branch(repo_a, 'master', 'initial', {'a0': 'a'})
-            make_branch(repo_b, 'master', 'initial', {'b0': 'b'})
+            repo_a.make_commits(None, Commit('initial', tree={'a0': 'a'}), ref='heads/master')
+            repo_b.make_commits(None, Commit('initial', tree={'b0': 'b'}), ref='heads/master')
 
             b = make_pr(repo_b, 'xxx', [{'b1': 'b'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],)
         env.run_crons() # stage b and c
 
         with repo_a, repo_b:
-            repo_a.post_status('heads/staging.master', 'success', 'legal/cla')
-            repo_a.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo_b.post_status('heads/staging.master', 'success', 'legal/cla')
-            repo_b.post_status('heads/staging.master', 'success', 'ci/runbot')
+            repo_a.post_status('heads/staging.master', 'success')
+            repo_b.post_status('heads/staging.master', 'success')
         env.run_crons() # merge b and c
         assert to_pr(env, b).state == 'merged'
 
@@ -833,15 +872,16 @@ class TestBlocked:
         p = to_pr(env, pr)
         assert not p.blocked
 
+    @pytest.mark.usefixtures("reviewer_admin")
     def test_linked_unready(self, env, repo_a, repo_b, config):
         """ Create a PR A linked to a non-ready PR B,
         * A is blocked by default
-        * A is not blocked if A.p=0
-        * A is not blocked if B.p=0
+        * A is not blocked if A.skipci
+        * A is not blocked if B.skipci
         """
         with repo_a, repo_b:
-            make_branch(repo_a, 'master', 'initial', {'a0': 'a'})
-            make_branch(repo_b, 'master', 'initial', {'b0': 'b'})
+            repo_a.make_commits(None, Commit('initial', tree={'a0': 'a'}), ref='heads/master')
+            repo_b.make_commits(None, Commit('initial', tree={'b0': 'b'}), ref='heads/master')
 
             a = make_pr(repo_a, 'xxx', [{'a1': 'a'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],)
             b = make_pr(repo_b, 'xxx', [{'b1': 'b'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'], statuses=[])
@@ -850,13 +890,11 @@ class TestBlocked:
         pr_a = to_pr(env, a)
         assert pr_a.blocked
 
-        with repo_a: a.post_comment('hansen p=0', config['role_reviewer']['token'])
+        with repo_a: a.post_comment('hansen skipchecks', config['role_reviewer']['token'])
         assert not pr_a.blocked
+        pr_a.skipchecks = False
 
-        with repo_a: a.post_comment('hansen p=2', config['role_reviewer']['token'])
-        assert pr_a.blocked
-
-        with repo_b: b.post_comment('hansen p=0', config['role_reviewer']['token'])
+        with repo_b: b.post_comment('hansen skipchecks', config['role_reviewer']['token'])
         assert not pr_a.blocked
 
 def test_different_branches(env, project, repo_a, repo_b, config):
@@ -867,9 +905,9 @@ def test_different_branches(env, project, repo_a, repo_b, config):
     env['runbot_merge.repository'].search([('name', '=', repo_b.name)])\
         .branch_filter = '[("name", "=", "master")]'
     with repo_a, repo_b:
-        make_branch(repo_a, 'dev', 'initial', {'a': '0'})
-        make_branch(repo_a, 'master', 'initial', {'b': '0'})
-        make_branch(repo_b, 'master', 'initial', {'b': '0'})
+        repo_a.make_commits(None, Commit('initial', tree={'a': '0'}), ref='heads/dev')
+        repo_a.make_commits(None, Commit('initial', tree={'b': '0'}), ref='heads/master')
+        repo_b.make_commits(None, Commit('initial', tree={'b': '0'}), ref='heads/master')
 
         pr_a = make_pr(
             repo_a, 'xxx', [{'a': '1'}],
@@ -881,8 +919,7 @@ def test_different_branches(env, project, repo_a, repo_b, config):
 
     with repo_a:
         pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
-        repo_a.post_status('heads/staging.dev', 'success', 'legal/cla')
-        repo_a.post_status('heads/staging.dev', 'success', 'ci/runbot')
+        repo_a.post_status('heads/staging.dev', 'success')
     env.run_crons()
 
     assert to_pr(env, pr_a).state == 'merged'
@@ -903,6 +940,7 @@ class TestSubstitutions:
             'repo_ids': [(0, 0, {'name': 'xxx/xxx'})],
             'branch_ids': [(0, 0, {'name': 'master'})]
         })
+        env['runbot_merge.events_sources'].create({'repository': 'xxx/xxx'})
         r = p.repo_ids
         # replacement pattern, pr label, stored label
         cases = [
@@ -961,41 +999,32 @@ class TestSubstitutions:
         repo_b_id.substitutions = r"/.+:/%s:/" % repo_a.owner
 
         with repo_a:
-            make_branch(repo_a, 'master', 'initial', {'a': '0'})
+            repo_a.make_commits(None, Commit('initial', tree={'a': '0'}), ref='heads/master')
         with repo_b:
-            make_branch(repo_b, 'master', 'initial', {'b': '0'})
+            repo_b.make_commits(None, Commit('initial', tree={'b': '0'}), ref='heads/master')
 
         # policy is that repo_a PRs are created in the same repo while repo_b PRs
         # are created in personal forks
         with repo_a:
             repo_a.make_commits('master', repo_a.Commit('bop', tree={'a': '1'}), ref='heads/abranch')
             pra = repo_a.make_pr(target='master', head='abranch')
-        b_fork = repo_b.fork()
-        with b_fork, repo_b:
+        with repo_b, repo_b.fork() as b_fork:
             b_fork.make_commits('master', b_fork.Commit('pob', tree={'b': '1'}), ref='heads/abranch')
             prb = repo_b.make_pr(
                 title="a pr",
                 target='master', head='%s:abranch' % b_fork.owner
             )
 
-        pra_id = env['runbot_merge.pull_requests'].search([
-            ('repository.name', '=', repo_a.name),
-            ('number', '=', pra.number)
-        ])
-        prb_id = env['runbot_merge.pull_requests'].search([
-            ('repository.name', '=', repo_b.name),
-            ('number', '=', prb.number)
-        ])
+        pra_id = to_pr(env, pra)
+        prb_id = to_pr(env, prb)
         assert pra_id.label.endswith(':abranch')
         assert prb_id.label.endswith(':abranch')
 
         with repo_a, repo_b:
-            repo_a.post_status(pra.head, 'success', 'legal/cla')
-            repo_a.post_status(pra.head, 'success', 'ci/runbot')
+            repo_a.post_status(pra.head, 'success')
             pra.post_comment('hansen r+', config['role_reviewer']['token'])
 
-            repo_b.post_status(prb.head, 'success', 'legal/cla')
-            repo_b.post_status(prb.head, 'success', 'ci/runbot')
+            repo_b.post_status(prb.head, 'success')
             prb.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
@@ -1035,6 +1064,7 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
         'branch_ids': [(0, 0, {'name': 'default'})],
     })
     setreviewers(*p1.repo_ids)
+    env['runbot_merge.events_sources'].create([{'repository': r1.name}])
 
     r2 = make_repo('repo_b')
     with r2:
@@ -1055,6 +1085,7 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
         'branch_ids': [(0, 0, {'name': 'default'})],
     })
     setreviewers(*p2.repo_ids)
+    env['runbot_merge.events_sources'].create([{'repository': r2.name}])
 
     assert r1_dev.owner == r2_dev.owner
 
@@ -1078,13 +1109,6 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
     pr1_id = to_pr(env, pr1)
     pr2_id = to_pr(env, pr2)
 
-    print(
-        pr1.repo.name, pr1.number, pr1_id.display_name, pr1_id.label,
-        '\n',
-        pr2.repo.name, pr2.number, pr2_id.display_name, pr2_id.label,
-        flush=True,
-    )
-
     assert pr1_id.state == 'ready' and not pr1_id.blocked
     assert pr2_id.state == 'validated'
 
@@ -1093,11 +1117,9 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
 
     assert pr1.comments == [
         (users['reviewer'], 'hansen r+'),
-        (users['user'], f'[Pull request status dashboard]({pr1_id.url}).'),
+        seen(env, pr1, users),
     ]
-    assert pr2.comments == [
-        (users['user'], f'[Pull request status dashboard]({pr2_id.url}).'),
-    ]
+    assert pr2.comments == [seen(env, pr2, users)]
 
 def test_freeze_complete(env, project, repo_a, repo_b, repo_c, users, config):
     """ Tests the freeze wizard feature (aside from the UI):
@@ -1115,6 +1137,8 @@ def test_freeze_complete(env, project, repo_a, repo_b, repo_c, users, config):
     * check that freeze goes through
     * check that reminder is shown
     * check that new branches are created w/ correct parent & commit info
+    * check that a PRs (freeze and bump) are part of synthetic stagings so
+      they're correctly accounted for in the change history
     """
     project.freeze_reminder = "Don't forget to like and subscribe"
 
@@ -1163,26 +1187,22 @@ def test_freeze_complete(env, project, repo_a, repo_b, repo_c, users, config):
     ]})
     r = w_id.action_freeze()
     assert r == w, "the freeze is not ready so the wizard should redirect to itself"
-    owner = repo_c.owner
     assert w_id.errors == f"""\
-* All release PRs must have the same label, found '{owner}:release-1.1, {owner}:whocares'.
+* All release PRs must have the same label, found '{pr_rel_c.user}:release-1.1, {pr_other.user}:whocares'.
 * 2 required PRs not ready."""
     w_id.release_pr_ids[-1].pr_id = release_prs[repo_c.name].id
 
     with repo_a:
         pr_required_a.post_comment('hansen r+', config['role_reviewer']['token'])
-        repo_a.post_status('apr', 'success', 'ci/runbot')
-        repo_a.post_status('apr', 'success', 'legal/cla')
+        repo_a.post_status(pr_required_a.head, 'success')
     with repo_c:
         pr_required_c.post_comment('hansen r+', config['role_reviewer']['token'])
-        repo_c.post_status('cpr', 'success', 'ci/runbot')
-        repo_c.post_status('cpr', 'success', 'legal/cla')
+        repo_c.post_status(pr_required_c.head, 'success')
     env.run_crons()
 
     for repo in [repo_a, repo_b, repo_c]:
         with repo:
-            repo.post_status('staging.master', 'success', 'ci/runbot')
-            repo.post_status('staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
     env.run_crons()
 
     assert to_pr(env, pr_required_a).state == 'merged'
@@ -1205,13 +1225,27 @@ def test_freeze_complete(env, project, repo_a, repo_b, repo_c, users, config):
     assert r['res_model'] == 'runbot_merge.project'
     assert r['res_id'] == project.id
 
+    release_pr_ids = functools.reduce(operator.add, release_prs.values())
     # stuff that's done directly
-    for pr_id in release_prs.values():
-        assert pr_id.state == 'merged'
+    assert all(pr_id.state == 'merged' for pr_id in release_pr_ids)
     assert pr_bump_id.state == 'merged'
+    assert pr_bump_id.commits_map != '{}'
+
+    assert len(release_pr_ids.batch_id) == 1
+    assert release_pr_ids.batch_id.merge_date
+    assert release_pr_ids.batch_id.staging_ids.target.name == '1.1'
+    assert release_pr_ids.batch_id.staging_ids.state == 'success'
+
+    assert pr_bump_id.batch_id.merge_date
+    assert pr_bump_id.batch_id.staging_ids.target.name == 'master'
+    assert pr_bump_id.batch_id.staging_ids.state == 'success'
 
     # stuff that's behind a cron
     env.run_crons()
+
+    # check again to be sure
+    assert all(pr_id.state == 'merged' for pr_id in release_pr_ids)
+    assert pr_bump_id.state == 'merged'
 
     assert pr_rel_a.state == "closed"
     assert pr_rel_a.base['ref'] == '1.1'
@@ -1219,8 +1253,7 @@ def test_freeze_complete(env, project, repo_a, repo_b, repo_c, users, config):
     assert pr_rel_b.base['ref'] == '1.1'
     assert pr_rel_c.state == "closed"
     assert pr_rel_c.base['ref'] == '1.1'
-    for pr_id in release_prs.values():
-        assert pr_id.target.name == '1.1'
+    assert all(pr_id.target.name == '1.1' for pr_id in release_pr_ids)
 
     assert pr_bump_a.state == 'closed'
     assert pr_bump_a.base['ref'] == 'master'
@@ -1247,12 +1280,12 @@ def test_freeze_complete(env, project, repo_a, repo_b, repo_c, users, config):
 
     c_b = repo_b.commit('1.1')
     assert c_b.message.startswith('Release 1.1 (B)')
-    assert repo_b.read_tree(c_b) == {'f': '1', 'version': ''}
+    assert repo_b.read_tree(c_b) == {'f': '1', 'version': '1.1'}
     assert c_b.parents[0] == master_head_b
 
     c_c = repo_c.commit('1.1')
     assert c_c.message.startswith('Release 1.1 (C)')
-    assert repo_c.read_tree(c_c) == {'f': '2', 'version': ''}
+    assert repo_c.read_tree(c_c) == {'f': '2', 'version': '1.1'}
     assert repo_c.commit(c_c.parents[0]).parents[0] == master_head_c
 
 
@@ -1263,49 +1296,55 @@ def setup_mess(repo_a, repo_b, repo_c):
             [root, _] = r.make_commits(
                 None,
                 Commit('base', tree={'version': '', 'f': '0'}),
-                Commit('release 1.0', tree={'version': '1.0'} if r is repo_a else None),
+                Commit('release 1.0', tree={'version': '1.0'}),
                 ref='heads/1.0'
             )
             master_heads.extend(r.make_commits(root, Commit('other', tree={'f': '1'}), ref='heads/master'))
+
+    a_fork = repo_a.fork()
+    b_fork = repo_b.fork()
+    c_fork = repo_c.fork()
+    assert a_fork.owner == b_fork.owner == c_fork.owner
+    owner = a_fork.owner
     # have 2 PRs required for the freeze
-    with repo_a:
-        repo_a.make_commits(master_heads[0], Commit('super important file', tree={'g': 'x'}), ref='heads/apr')
-        pr_required_a = repo_a.make_pr(target='master', head='apr')
-    with repo_c:
-        repo_c.make_commits(master_heads[2], Commit('update thing', tree={'f': '2'}), ref='heads/cpr')
-        pr_required_c = repo_c.make_pr(target='master', head='cpr')
+    with repo_a, a_fork:
+        a_fork.make_commits(master_heads[0], Commit('super important file', tree={'g': 'x'}), ref='heads/apr')
+        pr_required_a = repo_a.make_pr(target='master', head=f'{owner}:apr', title="xxx")
+    with repo_c, c_fork:
+        c_fork.make_commits(master_heads[2], Commit('update thing', tree={'f': '2'}), ref='heads/cpr')
+        pr_required_c = repo_c.make_pr(target='master', head=f'{owner}:cpr', title="yyy")
     # have 3 release PRs, only the first one updates the tree (version file)
-    with repo_a:
-        repo_a.make_commits(
+    with repo_a, a_fork:
+        a_fork.make_commits(
             master_heads[0],
             Commit('Release 1.1 (A)', tree={'version': '1.1'}),
             ref='heads/release-1.1'
         )
-        pr_rel_a = repo_a.make_pr(target='master', head='release-1.1')
-    with repo_b:
-        repo_b.make_commits(
+        pr_rel_a = repo_a.make_pr(target='master', head=f'{owner}:release-1.1', title="zzz")
+    with repo_b, b_fork:
+        b_fork.make_commits(
             master_heads[1],
-            Commit('Release 1.1 (B)', tree=None),
+            Commit('Release 1.1 (B)', tree={'version': '1.1'}),
             ref='heads/release-1.1'
         )
-        pr_rel_b = repo_b.make_pr(target='master', head='release-1.1')
-    with repo_c:
-        repo_c.make_commits(master_heads[2], Commit("Some change", tree={'a': '1'}), ref='heads/whocares')
-        pr_other = repo_c.make_pr(target='master', head='whocares')
-        repo_c.make_commits(
+        pr_rel_b = repo_b.make_pr(target='master', head=f'{owner}:release-1.1', title="000")
+    with repo_c, c_fork:
+        c_fork.make_commits(master_heads[2], Commit("Some change", tree={'a': '1'}), ref='heads/whocares')
+        pr_other = repo_c.make_pr(target='master', head=f'{owner}:whocares', title="111")
+        c_fork.make_commits(
             master_heads[2],
-            Commit('Release 1.1 (C)', tree=None),
+            Commit('Release 1.1 (C)', tree={'version': '1.1'}),
             ref='heads/release-1.1'
         )
-        pr_rel_c = repo_c.make_pr(target='master', head='release-1.1')
+        pr_rel_c = repo_c.make_pr(target='master', head=f'{owner}:release-1.1', title="222")
     # have one bump PR on repo A
-    with repo_a:
-        repo_a.make_commits(
+    with repo_a, a_fork:
+        a_fork.make_commits(
             master_heads[0],
             Commit("Bump A", tree={'version': '1.2-alpha'}),
             ref='heads/bump-1.1',
         )
-        pr_bump_a = repo_a.make_pr(target='master', head='bump-1.1')
+        pr_bump_a = repo_a.make_pr(target='master', head=f'{owner}:bump-1.1', title="333")
     return master_heads, (pr_required_a, None, pr_required_c), (pr_rel_a, pr_rel_b, pr_rel_c), pr_bump_a, pr_other
 
 def test_freeze_subset(env, project, repo_a, repo_b, repo_c, users, config):
@@ -1422,7 +1461,8 @@ def test_freeze_conflict(env, project, repo_a, repo_b, repo_c, users, config):
 
     # create conflicting branch
     with repo_c:
-        repo_c.make_ref('heads/1.1', heads[2])
+        [c] = repo_c.make_commits(heads[2], Commit("exists", tree={'version': ''}))
+        repo_c.make_ref('heads/1.1', c)
 
     # actually perform the freeze
     with pytest.raises(xmlrpc.client.Fault) as e:
@@ -1436,3 +1476,63 @@ def test_freeze_conflict(env, project, repo_a, repo_b, repo_c, users, config):
     with pytest.raises(AssertionError) as e:
         repo_b.get_ref('heads/1.1')
     assert e.value.args[0].startswith("Not Found")
+
+def test_cancel_staging(env, project, repo_a, repo_b, users, config):
+    """If a batch is flagged as staging cancelling (from any PR), the staging
+    should get cancelled if and when the batch transitions to unblocked
+    """
+    with repo_a, repo_b:
+        repo_a.make_commits(None, Commit('initial', tree={'a': '1'}), ref='heads/master')
+        repo_b.make_commits(None, Commit('initial', tree={'b': '1'}), ref='heads/master')
+
+        pr_a = make_pr(repo_a, 'batch', [{'a': '2'}], user=config['role_user']['token'], statuses=[], reviewer=None)
+        pr_b = make_pr(repo_b, 'batch', [{'b': '2'}], user=config['role_user']['token'], statuses=[], reviewer=None)
+        pr_lone = make_pr(
+            repo_a,
+            "C",
+            [{'c': '1'}],
+            user=config['role_user']['token'],
+            reviewer=config['role_reviewer']['token'],
+        )
+    env.run_crons()
+
+    a_id, b_id, lone_id = map(to_pr, repeat(env), [pr_a, pr_b, pr_lone])
+    assert lone_id.staging_id
+    st = lone_id.staging_id
+
+    with repo_a:
+        pr_a.post_comment("hansen cancel=staging", config['role_reviewer']['token'])
+    assert a_id.state == 'opened'
+    assert a_id.cancel_staging
+    assert b_id.cancel_staging
+    assert lone_id.staging_id == st
+    with repo_a:
+        pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
+    assert a_id.state == 'approved'
+    assert lone_id.staging_id == st
+    with repo_a:
+        repo_a.post_status(a_id.head, 'success')
+    env.run_crons()
+    assert a_id.state == 'ready'
+    assert lone_id.staging_id == st
+
+    assert b_id.state == 'opened'
+    with repo_b:
+        pr_b.post_comment('hansen r+', config['role_reviewer']['token'])
+    assert b_id.state == 'approved'
+    assert lone_id.staging_id == st
+    with repo_b:
+        repo_b.post_status(b_id.head, 'success')
+    assert b_id.state == 'approved'
+    assert lone_id.staging_id == st
+    env.run_crons()
+    assert b_id.state == 'ready'
+    # should have cancelled the staging, picked a and b, and re-staged the
+    # entire thing
+    assert lone_id.staging_id != st
+
+    assert len({
+        lone_id.staging_id.id,
+        a_id.staging_id.id,
+        b_id.staging_id.id,
+    }) == 1
