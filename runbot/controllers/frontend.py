@@ -662,3 +662,33 @@ class Runbot(Controller):
             'trigger': trigger_id,
             'project': trigger_id.project_id,
         })
+
+    @route([
+        '/runbot/dockerfile',
+        '/runbot/dockerfile/<int:dockerfile_id>',
+        '/runbot/dockerfile/tag/<string:docker_tag>',
+        '/runbot/dockerfile/version/<string:version>',
+    ], type='http', auth='public', sitemap=False)
+    def dockerfile_content(self, dockerfile_id=None, version=None, docker_tag=None, **kwargs):
+        dockerfile_sudo = request.env['runbot.dockerfile'].sudo()
+        if 'id' in kwargs:
+            dockerfile_id = int(kwargs['id'])
+        if dockerfile_id:  # keep 'id' for historical reasons
+            dockerfile = dockerfile_sudo.browse(dockerfile_id).exists()
+        elif docker_tag:
+            dockerfile = dockerfile_sudo.search([('image_tag', '=', docker_tag)])
+        elif version:
+            dockerfile = dockerfile_sudo.search([('version_ids.name', '=', version)])
+        else:
+            raise NotFound
+
+        if dockerfile.public_visibility:
+            return Response(response=dockerfile.layer_ids.render_layers({
+                'USERUID': '${USERUID}',
+                'USERGID': '${USERGID}',
+                'USERNAME': '${USERNAME}',
+            }), status=200, mimetype='text/plain')
+
+        if dockerfile:
+            _logger.error('Trying to access a non public docker image')
+        raise NotFound

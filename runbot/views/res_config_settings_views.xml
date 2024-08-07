@@ -37,6 +37,9 @@
                     <setting>
                       <field name="runbot_disable_host_on_fetch_failure"/>
                     </setting>
+                    <setting>
+                      <field name="runbot_dockerfile_public_by_default"/>
+                    </setting>
                   </block>
 
                   <block title="Limits">
