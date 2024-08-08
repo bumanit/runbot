@@ -122,11 +122,8 @@ class Host(models.Model):
         _logger.info('Building docker images...')
         self.ensure_one()
         for dockerfile in self.env['runbot.dockerfile'].search([('to_build', '=', True)]):
-            self._docker_build_dockerfile(dockerfile)
+            dockerfile._build(self)
         _logger.info('Done...')
-
-    def _docker_build_dockerfile(self, dockerfile):
-        dockerfile._build()
 
     @ormcache()
     def _host_list(self):

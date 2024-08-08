@@ -287,7 +287,7 @@ class Dockerfile(models.Model):
                 'content': 'USER {USERNAME}',
             })
 
-    def _build(self):
+    def _build(self, host=None):
         start = time.time()
         docker_build_path = self.env['runbot.runbot']._path('docker', self.image_tag)
         os.makedirs(docker_build_path, exist_ok=True)
@@ -299,7 +299,7 @@ class Dockerfile(models.Model):
 
         docker_build_identifier, msg = docker_build(docker_build_path, self.image_tag)
         duration = time.time() - start
-        docker_build_result_values = {'dockerfile_id': self.id, 'output': msg, 'duration': duration, 'content': content, 'host_id': self.id}
+        docker_build_result_values = {'dockerfile_id': self.id, 'output': msg, 'duration': duration, 'content': content, 'host_id': host and host.id}
         duration = time.time() - start
         if docker_build_identifier:
             docker_build_result_values['result'] = 'success'
@@ -315,7 +315,7 @@ class Dockerfile(models.Model):
             # check previous result anyway
             previous_result = self.env['runbot.docker_build_result'].search([
                 ('dockerfile_id', '=', self.id),
-                ('host_id', '=', self.id),
+                ('host_id', '=', host and host.id),
             ], order='id desc', limit=1)
             # identifier changed
             if docker_build_identifier.id != previous_result.identifier:
