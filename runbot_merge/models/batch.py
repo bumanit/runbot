@@ -99,7 +99,7 @@ class Batch(models.Model):
 
     # unlike on PRs, this does not get detached... ? (because batches can be
     # partially detached so that's a PR-level concern)
-    parent_path = fields.Char(index=True)
+    parent_path = fields.Char(index=True, unaccent=False)
     parent_id = fields.Many2one("runbot_merge.batch")
     genealogy_ids = fields.Many2many(
         "runbot_merge.batch",
