@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import errno
 import select
 import shutil
 import threading
@@ -515,7 +516,12 @@ def server(request, db, port, module, addons_path, tmpdir):
                 r = os.read(inpt, 4096)
                 if not r:
                     break
-                os.write(output, r)
+                try:
+                    os.write(output, r)
+                except OSError as e:
+                    if e.errno == errno.EBADF:
+                        break
+                    raise
                 buf.extend(r)
         os.close(inpt)
 
