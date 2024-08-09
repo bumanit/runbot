@@ -87,7 +87,7 @@ def pytest_addoption(parser):
     parser.addoption('--coverage', action='store_true')
 
     parser.addoption(
-        '--tunnel', action="store", type="choice", choices=['', 'ngrok', 'localtunnel'], default='',
+        '--tunnel', action="store", choices=['', 'ngrok', 'localtunnel'], default='',
         help="Which tunneling method to use to expose the local Odoo server "
              "to hook up github's webhook. ngrok is more reliable, but "
              "creating a free account is necessary to avoid rate-limiting "
@@ -104,6 +104,10 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers",
         "expect_log_errors(reason): allow and require tracebacks in the log",
+    )
+    config.addinivalue_line(
+        "markers",
+        "defaultstatuses: use the statuses `default` rather than `ci/runbot,legal/cla`",
     )
 
 def pytest_unconfigure(config):
