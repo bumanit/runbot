@@ -1,3 +1,4 @@
+from . import mail_thread
 from . import ir_actions
 from . import res_partner
 from . import project

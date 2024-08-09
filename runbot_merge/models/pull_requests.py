@@ -954,7 +954,7 @@ For your own safety I've ignored *everything in your entire comment*.
         cmdstr = ', '.join(map(str, cmds))
         if not rejections:
             _logger.info("%s (%s) applied %s", login, name, cmdstr)
-            self.env.cr.precommit.data['change-author'] = author.id
+            self._track_set_author(author.id, fallback=True)
             return 'applied ' + cmdstr
 
         self.env.cr.rollback()
@@ -1120,27 +1120,6 @@ For your own safety I've ignored *everything in your entire comment*.
         if not (self.squash or self.merge_method):
             self.env.ref('runbot_merge.check_linked_prs_status')._trigger()
         return None
-
-    def message_post(self, **kw):
-        if author := self.env.cr.precommit.data.get('change-author'):
-            kw['author_id'] = author
-        if message := self.env.cr.precommit.data.get('change-message'):
-            kw['body'] = html_escape(message)
-        return super().message_post(**kw)
-
-    def _message_log(self, **kw):
-        if author := self.env.cr.precommit.data.get('change-author'):
-            kw['author_id'] = author
-        if message := self.env.cr.precommit.data.get('change-message'):
-            kw['body'] = html_escape(message)
-        return super()._message_log(**kw)
-
-    def _message_log_batch(self, **kw):
-        if author := self.env.cr.precommit.data.get('change-author'):
-            kw['author_id'] = author
-        if message := self.env.cr.precommit.data.get('change-message'):
-            kw['bodies'] = {p.id: html_escape(message) for p in self}
-        return super()._message_log_batch(**kw)
 
     def _pr_acl(self, user):
         if not self:
@@ -1946,6 +1925,7 @@ class Commit(models.Model):
                 self.flush(['to_check'], c)
                 if pr:
                     pr._validate(c.statuses)
+                    pr._track_set_log_message(html_escape(f"statuses changed on {sha}"))
 
                 if stagings:
                     stagings._notify(c)
@@ -1956,8 +1936,6 @@ class Commit(models.Model):
                 _logger.exception("Failed to apply commit %s (%s)", c, sha)
                 self.env.cr.rollback()
             else:
-                self.env.cr.precommit.data['change-message'] = \
-                    f"statuses changed on {sha}"
                 self.env.cr.commit()
 
     _sql_constraints = [
@@ -2199,9 +2177,8 @@ class Stagings(models.Model):
 
     def fail(self, message, prs=None):
         _logger.info("Staging %s failed: %s", self, message)
-        self.env.cr.precommit.data['change-message'] =\
-            f'staging {self.id} failed: {message}'
         prs = prs or self.batch_ids.prs
+        prs._track_set_log_message(f'staging {self.id} failed: {message}')
         prs.error = True
         for pr in prs:
            self.env.ref('runbot_merge.pr.staging.fail')._send(
@@ -2317,9 +2294,8 @@ class Stagings(models.Model):
                     'reason': str(e.__cause__ or e.__context__ or e)
                 })
             else:
-                self.env.cr.precommit.data['change-message'] =\
-                    f'staging {self.id} succeeded'
                 prs = self.mapped('batch_ids.prs')
+                prs._track_set_log_message(f'staging {self.id} succeeded')
                 logger.info(
                     "%s FF successful, marking %s as merged",
                     self, prs
