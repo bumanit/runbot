@@ -20,7 +20,7 @@
                     <separator string="Required Statuses"/>
                     <field name="status_ids">
                         <tree editable="bottom">
-                            <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open status"/>
                             <field name="context"/>
                             <field name="branch_filter"/>
                             <field name="prs"/>
@@ -56,7 +56,7 @@
                     </group>
                     <field name="staging_ids" nolabel="1" readonly="1">
                         <tree default_order="staged_at desc">
-                            <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open staging"/>
                             <field name="id"/>
                             <field name="staged_at"/>
                             <field name="state"/>
@@ -202,7 +202,7 @@
                                 <group colspan="4">
                                     <field name="delegates" nolabel="1">
                                         <tree>
-                                            <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open partner"/>
                                             <field name="name"/>
                                             <field name="github_login"/>
                                         </tree>
@@ -215,7 +215,7 @@
                                 <group colspan="4">
                                     <field name="staging_ids" nolabel="1" readonly="1">
                                         <tree>
-                                            <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open staging"/>
                                             <field name="staged_at"/>
                                             <field name="state"/>
                                             <field name="reason"/>
@@ -239,7 +239,7 @@
                               <group colspan="4">
                                 <field name="forwardport_ids" nolabel="1" readonly="True">
                                   <tree>
-                                    <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                                    <button type="object" name="get_formview_action" icon="fa-external-link" title="open PR"/>
                                     <field name="target" string="Branch"/>
                                     <field name="number"/>
                                   </tree>
@@ -337,7 +337,7 @@
                         <group string="Heads">
                             <field name="head_ids" colspan="2" nolabel="1" readonly="1">
                                 <tree>
-                                    <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                                    <button type="object" name="get_formview_action" icon="fa-external-link" title="open head"/>
                                     <field name="sha"/>
                                 </tree>
                             </field>
@@ -345,7 +345,7 @@
                         <group string="Commits">
                             <field name="commit_ids" colspan="2" nolabel="1" readonly="1">
                                 <tree>
-                                    <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                                    <button type="object" name="get_formview_action" icon="fa-external-link" title="open commit"/>
                                     <field name="sha"/>
                                 </tree>
                             </field>
@@ -354,7 +354,7 @@
                     <group string="Batches">
                         <field name="batch_ids" colspan="4" nolabel="1" readonly="1">
                             <tree>
-                                <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                                <button type="object" name="get_formview_action" icon="fa-external-link" title="open batch"/>
                                 <field name="name"/>
                                 <field name="prs" widget="many2many_tags"/>
                             </tree>
@@ -363,7 +363,7 @@
                     <group string="PRs">
                         <field name="pr_ids" colspan="4" nolabel="1" readonly="1">
                             <tree>
-                                <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                                <button type="object" name="get_formview_action" icon="fa-external-link" title="open pr"/>
                                 <field name="display_name"/>
                                 <field name="github_url" widget="url"/>
                                 <field name="url" widget="url"/>
@@ -402,7 +402,7 @@
                     <separator string="Pull Requests"/>
                     <field name="pull_requests" nolabel="1">
                         <tree>
-                            <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open pr"/>
                             <field name="display_name"/>
                             <field name="state"/>
                         </tree>
@@ -410,7 +410,7 @@
                     <separator string="Stagings (commits)"/>
                     <field name="commit_ids" nolabel="1" readonly="1">
                         <tree>
-                            <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open commit"/>
                             <field name="target"/>
                             <field name="id"/>
                             <field name="staged_at"/>
@@ -420,7 +420,7 @@
                     <separator string="Stagings (heads)"/>
                     <field name="head_ids" nolabel="1" readonly="1">
                         <tree>
-                            <button type="object" name="get_formview_action" icon="fa-external-link"/>
+                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open head"/>
                             <field name="target"/>
                             <field name="id"/>
                             <field name="staged_at"/>
