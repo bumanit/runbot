@@ -6,7 +6,7 @@
             <form js_class="freeze_wizard">
                 <sheet>
                     <div class="alert alert-warning" role="alert"
-                         attrs="{'invisible': [('errors', '=', False)]}">
+                         invisible="not errors">
                         <field name="errors" readonly="True"/>
                     </div>
                     <group>
@@ -59,9 +59,9 @@
                         the style of the button if the form has "no errors"
                         -->
                         <button string="Freeze" type="object" name="action_freeze"
-                                class="btn-success" attrs="{'invisible': [('errors', '!=', False)]}"/>
+                                class="btn-success" invisible="errors"/>
                         <button string="Freeze" type="object" name="action_freeze"
-                                class="btn-primary" attrs="{'invisible': [('errors', '=', False)]}"/>
+                                class="btn-primary" invisible="not errors"/>
                         <button string="Save &amp; Close" special="save"/>
                         <button string="Cancel" type="object" name="action_cancel" class="btn-warning"/>
                     </footer>

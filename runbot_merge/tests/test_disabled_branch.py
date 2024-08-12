@@ -1,9 +1,15 @@
+import pytest
+
 from utils import seen, Commit, pr_page
 
 def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, config, users, page):
     """ PRs to disabled branches are ignored, but what if the PR exists *before*
     the branch is disabled?
     """
+    # run crons from template to clean up the queue before possibly creating
+    # new work
+    assert env['base'].run_crons()
+
     repo = make_repo('repo')
     project.branch_ids.sequence = 0
     project.write({'branch_ids': [
@@ -17,6 +23,7 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
         'group_id': False,
     })
     setreviewers(*project.repo_ids)
+    env['runbot_merge.events_sources'].create({'repository': repo.name})
 
     with repo:
         [m] = repo.make_commits(None, Commit('root', tree={'a': '1'}), ref='heads/master')
@@ -38,9 +45,20 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     staging_id = branch_id.active_staging_id
     assert staging_id == pr_id.staging_id
 
+    # staging of `pr` should have generated a staging branch
+    _ = repo.get_ref('heads/staging.other')
+    # stagings should not need a tmp branch anymore, so this should not exist
+    with pytest.raises(AssertionError, match=r'Not Found'):
+        repo.get_ref('heads/tmp.other')
+
     # disable branch "other"
     branch_id.active = False
     env.run_crons()
+
+    # triggered cleanup should have deleted the staging for the disabled `other`
+    # target branch
+    with pytest.raises(AssertionError, match=r'Not Found'):
+        repo.get_ref('heads/staging.other')
 
     # the PR should not have been closed implicitly
     assert pr_id.state == 'ready'
@@ -50,20 +68,17 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     assert not branch_id.active_staging_id
     assert staging_id.state == 'cancelled', \
         "closing the PRs should have canceled the staging"
-    assert staging_id.reason == f"Target branch deactivated by 'admin'."
+    assert staging_id.reason == "Target branch deactivated by 'admin'."
 
     p = pr_page(page, pr)
-    target = dict(zip(
-        (e.text for e in p.cssselect('dl.runbot-merge-fields dt')),
-        (p.cssselect('dl.runbot-merge-fields dd'))
-    ))['target']
-    assert target.text_content() == 'other (inactive)'
-    assert target.get('class') == 'text-muted bg-warning'
+    [target] = p.cssselect('table tr.bg-info')
+    assert 'inactive' in target.classes
+    assert target[0].text_content() == "other"
 
     assert pr.comments == [
         (users['reviewer'], "hansen r+"),
         seen(env, pr, users),
-        (users['user'], "Hey @%(user)s @%(reviewer)s the target branch 'other' has been disabled, you may want to close this PR." % users),
+        (users['user'], "@%(user)s @%(reviewer)s the target branch 'other' has been disabled, you may want to close this PR." % users),
     ]
 
     with repo:
@@ -81,6 +96,11 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     assert pr_id.target == env['runbot_merge.branch'].search([('name', '=', 'other2')])
     assert pr_id.staging_id
 
+    # staging of `pr` should have generated a staging branch
+    _ = repo.get_ref('heads/staging.other2')
+    # stagings should not need a tmp branch anymore, so this should not exist
+    with pytest.raises(AssertionError, match=r'Not Found'):
+        repo.get_ref('heads/tmp.other2')
 
 def test_new_pr_no_branch(env, project, make_repo, setreviewers, users):
     """ A new PR to an *unknown* branch should be ignored and warn
@@ -92,6 +112,7 @@ def test_new_pr_no_branch(env, project, make_repo, setreviewers, users):
         'status_ids': [(0, 0, {'context': 'status'})]
     })
     setreviewers(*project.repo_ids)
+    env['runbot_merge.events_sources'].create({'repository': repo.name})
 
     with repo:
         [m] = repo.make_commits(None, Commit('root', tree={'a': '1'}), ref='heads/master')
@@ -125,6 +146,7 @@ def test_new_pr_disabled_branch(env, project, make_repo, setreviewers, users):
         'active': False,
     })
     setreviewers(*project.repo_ids)
+    env['runbot_merge.events_sources'].create({'repository': repo.name})
 
     with repo:
         [m] = repo.make_commits(None, Commit('root', tree={'a': '1'}), ref='heads/master')

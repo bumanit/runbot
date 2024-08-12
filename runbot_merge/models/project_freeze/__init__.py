@@ -1,17 +1,18 @@
-import contextlib
 import enum
 import itertools
 import json
 import logging
-import time
 from collections import Counter
+from typing import Dict
 
 from markupsafe import Markup
 
 from odoo import models, fields, api, Command
-from odoo.addons.runbot_merge.exceptions import FastForwardError
 from odoo.exceptions import UserError
 from odoo.tools import drop_view_if_exists
+
+from ... import git
+from ..pull_requests import Repository
 
 _logger = logging.getLogger(__name__)
 class FreezeWizard(models.Model):
@@ -177,11 +178,13 @@ class FreezeWizard(models.Model):
         if self.errors:
             return self.action_open()
 
-        conflict_crons = self.env.ref('runbot_merge.merge_cron') | self.env.ref('runbot_merge.staging_cron')
+        conflict_crons = self.env.ref('runbot_merge.merge_cron')\
+                       | self.env.ref('runbot_merge.staging_cron')\
+                       | self.env.ref('runbot_merge.process_updated_commits')
         # we don't want to run concurrently to the crons above, though we
         # don't need to prevent read access to them
         self.env.cr.execute(
-            'SELECT * FROM ir_cron WHERE id =ANY(%s) FOR SHARE NOWAIT',
+            'SELECT FROM ir_cron WHERE id =ANY(%s) FOR SHARE NOWAIT',
             [conflict_crons.ids]
         )
 
@@ -190,6 +193,12 @@ class FreezeWizard(models.Model):
         # everything so the new branch is the second one, just after the branch
         # it "forks"
         master, rest = project_id.branch_ids[0], project_id.branch_ids[1:]
+        if self.bump_pr_ids and master.active_staging_id:
+            self.env.cr.execute(
+                'SELECT FROM runbot_merge_stagings WHERE id = %s FOR UPDATE NOWAIT',
+                [master.active_staging_id.id]
+            )
+
         seq = itertools.count(start=1) # start reseq at 1
         commands = [
             (1, master.id, {'sequence': next(seq)}),
@@ -203,50 +212,65 @@ class FreezeWizard(models.Model):
         master_name = master.name
 
         gh_sessions = {r: r.github() for r in self.project_id.repo_ids}
+        repos: Dict[Repository, git.Repo] = {
+            r: git.get_local(r).check(False)
+            for r in self.project_id.repo_ids
+        }
+        for repo, copy in repos.items():
+            copy.fetch(git.source_url(repo), '+refs/heads/*:refs/heads/*')
+        all_prs = self.release_pr_ids.pr_id | self.bump_pr_ids.pr_id
+        for pr in all_prs:
+            repos[pr.repository].fetch(
+                git.source_url(pr.repository),
+                pr.head,
+            )
 
         # prep new branch (via tmp refs) on every repo
-        rel_heads = {}
+        rel_heads: Dict[Repository, str] = {}
         # store for master heads as odds are high the bump pr(s) will be on the
         # same repo as one of the release PRs
-        prevs = {}
+        prevs: Dict[Repository, str] = {}
         for rel in self.release_pr_ids:
             repo_id = rel.repository_id
             gh = gh_sessions[repo_id]
             try:
                 prev = prevs[repo_id] = gh.head(master_name)
-            except Exception:
-                raise UserError(f"Unable to resolve branch {master_name} of repository {repo_id.name} to a commit.")
+            except Exception as e:
+                raise UserError(f"Unable to resolve branch {master_name} of repository {repo_id.name} to a commit.") from e
 
-            # create the tmp branch to merge the PR into
-            tmp_branch = f'tmp.{self.branch_name}'
             try:
-                gh.set_ref(tmp_branch, prev)
-            except Exception as err:
-                raise UserError(f"Unable to create branch {self.branch_name} of repository {repo_id.name}: {err}.")
+                commits = gh.commits(rel.pr_id.number)
+            except Exception as e:
+                raise UserError(f"Unable to fetch commits of release PR {rel.pr_id.display_name}.") from e
 
-            rel_heads[repo_id], _ = gh.rebase(rel.pr_id.number, tmp_branch)
-            time.sleep(1)
+            _logger.debug("rebasing %s on %s (commits=%s)",
+                          rel.pr_id.display_name, prev, len(commits))
+            rel_heads[repo_id] = repos[repo_id].rebase(prev, commits)[0]
 
         # prep bump
-        bump_heads = {}
+        bump_heads: Dict[Repository, str] = {}
         for bump in self.bump_pr_ids:
             repo_id = bump.repository_id
             gh = gh_sessions[repo_id]
 
             try:
                 prev = prevs[repo_id] = prevs.get(repo_id) or gh.head(master_name)
-            except Exception:
-                raise UserError(f"Unable to resolve branch {master_name} of repository {repo_id.name} to a commit.")
+            except Exception as e:
+                raise UserError(f"Unable to resolve branch {master_name} of repository {repo_id.name} to a commit.") from e
 
-            # create the tmp branch to merge the PR into
-            tmp_branch = f'tmp.{master_name}'
             try:
-                gh.set_ref(tmp_branch, prev)
-            except Exception as err:
-                raise UserError(f"Unable to create branch {master_name} of repository {repo_id.name}: {err}.")
+                commits = gh.commits(bump.pr_id.number)
+            except Exception as e:
+                raise UserError(f"Unable to fetch commits of bump PR {bump.pr_id.display_name}.") from e
 
-            bump_heads[repo_id], _ = gh.rebase(bump.pr_id.number, tmp_branch)
-            time.sleep(1)
+            _logger.debug("rebasing %s on %s (commits=%s)",
+                          bump.pr_id.display_name, prev, len(commits))
+            bump_heads[repo_id] = repos[repo_id].rebase(prev, commits)[0]
+
+        # prevent concurrent updates to the commits table so we control the
+        # creation of commit objects from rebasing the release & bump PRs, do it
+        # only just before *pushing*
+        self.env.cr.execute("LOCK runbot_merge_commit IN ACCESS EXCLUSIVE MODE NOWAIT")
 
         deployed = {}
         # at this point we've got a bunch of tmp branches with merged release
@@ -256,38 +280,39 @@ class FreezeWizard(models.Model):
         failure = None
         for rel in self.release_pr_ids:
             repo_id = rel.repository_id
-            # helper API currently has no API to ensure we're just creating a
-            # new branch (as cheaply as possible) so do it by hand
-            status = None
-            with contextlib.suppress(Exception):
-                status = gh_sessions[repo_id].create_ref(self.branch_name, rel_heads[repo_id])
-                deployed[rel.pr_id.id] = rel_heads[repo_id]
-                to_delete.append(repo_id)
 
-            if status != 201:
+            if repos[repo_id].push(
+                git.source_url(repo_id),
+                f'{rel_heads[repo_id]}:refs/heads/{self.branch_name}',
+            ).returncode:
                 failure = ('create', repo_id.name, self.branch_name)
                 break
+
+            deployed[rel.pr_id.id] = rel_heads[repo_id]
+            to_delete.append(repo_id)
         else: # all release deployments succeeded
             for bump in self.bump_pr_ids:
                 repo_id = bump.repository_id
-                try:
-                    gh_sessions[repo_id].fast_forward(master_name, bump_heads[repo_id])
-                    deployed[bump.pr_id.id] = bump_heads[repo_id]
-                    to_revert.append(repo_id)
-                except FastForwardError:
+                if repos[repo_id].push(
+                    git.source_url(repo_id),
+                    f'{bump_heads[repo_id]}:refs/heads/{master_name}'
+                ).returncode:
                     failure = ('fast-forward', repo_id.name, master_name)
                     break
+
+                deployed[bump.pr_id.id] = bump_heads[repo_id]
+                to_revert.append(repo_id)
 
         if failure:
             addendums = []
             # creating the branch failed, try to delete all previous branches
             failures = []
             for prev_id in to_revert:
-                revert = gh_sessions[prev_id]('PATCH', f'git/refs/heads/{master_name}', json={
-                    'sha': prevs[prev_id],
-                    'force': True
-                }, check=False)
-                if not revert.ok:
+                if repos[prev_id].push(
+                    '-f',
+                    git.source_url(prev_id),
+                    f'{prevs[prev_id]}:refs/heads/{master_name}',
+                ).returncode:
                     failures.append(prev_id.name)
             if failures:
                 addendums.append(
@@ -297,8 +322,10 @@ class FreezeWizard(models.Model):
                 failures.clear()
 
             for prev_id in to_delete:
-                deletion = gh_sessions[prev_id]('DELETE', f'git/refs/heads/{self.branch_name}', check=False)
-                if not deletion.ok:
+                if repos[prev_id].push(
+                    git.source_url(prev_id),
+                    f':refs/heads/{self.branch_name}'
+                ).returncode:
                     failures.append(prev_id.name)
             if failures:
                 addendums.append(
@@ -317,8 +344,83 @@ class FreezeWizard(models.Model):
                 f"Unable to {reason} branch {repo}:{branch}.{addendum}"
             )
 
-        all_prs = self.release_pr_ids.pr_id | self.bump_pr_ids.pr_id
-        all_prs.state = 'merged'
+        b = self.env['runbot_merge.branch'].search([('name', '=', self.branch_name)])
+        # We specifically don't want to modified() or anything.
+        self.env.cr.execute(
+            "UPDATE runbot_merge_batch SET target=%s WHERE id = %s;"
+            "UPDATE runbot_merge_pull_requests SET target=%s WHERE id = any(%s)",
+            [
+                b.id, self.release_pr_ids.pr_id.batch_id.id,
+                b.id, self.release_pr_ids.pr_id.ids,
+            ]
+        )
+        all_prs.batch_id.merge_date = fields.Datetime.now()
+        all_prs.reviewed_by = self.env.user.partner_id.id
+        for p in all_prs:
+            p.commits_map = json.dumps({
+                '': deployed[p.id],
+                p.head: deployed[p.id]
+            })
+
+        # stagings have to be created conditionally as otherwise we might not
+        # have a `target` to set and it's mandatory
+        laster = self.env['runbot_merge.stagings'].search(
+            [('target', '=', master.id), ('state', '=', 'success')],
+            order='id desc',
+            limit=1,
+        ).commits.mapped(lambda c: (c.repository_id, c.commit_id))
+        if self.release_pr_ids:
+            rel_items = [(0, 0, {
+                    'repository_id': repo.id,
+                    'commit_id': self.env['runbot_merge.commit'].create({
+                        'sha': sha,
+                        'to_check': False,
+                    }).id,
+                } if (sha := rel_heads.get(repo)) else {
+                    'repository_id': repo.id,
+                    'commit_id': commit.id,
+                })
+                for repo, commit in laster
+            ]
+            self.env['runbot_merge.stagings'].create([{
+                'state': 'success',
+                'reason': 'release freeze staging',
+                'active': False,
+                'target': b.id,
+                'staging_batch_ids': [
+                    (0, 0, {'runbot_merge_batch_id': batch.id})
+                    for batch in self.release_pr_ids.pr_id.batch_id
+                ],
+                'heads': rel_items,
+                'commits': rel_items,
+            }])
+
+        if self.bump_pr_ids:
+            bump_items = [(0, 0, {
+                    'repository_id': repo.id,
+                    'commit_id': self.env['runbot_merge.commit'].create({
+                        'sha': sha,
+                        'to_check': False,
+                    }).id,
+                } if (sha := bump_heads.get(repo)) else {
+                    'repository_id': repo.id,
+                    'commit_id': commit.id,
+                })
+                for repo, commit in laster
+            ]
+            self.env['runbot_merge.stagings'].create([{
+                'state': 'success',
+                'reason': 'bump freeze staging',
+                'active': False,
+                'target': master.id,
+                'staging_batch_ids': [
+                    (0, 0, {'runbot_merge_batch_id': batch.id})
+                    for batch in self.bump_pr_ids.pr_id.batch_id
+                ],
+                'heads': bump_items,
+                'commits': bump_items,
+            }])
+
         self.env['runbot_merge.pull_requests.feedback'].create([{
             'repository': pr.repository.id,
             'pull_request': pr.number,
@@ -460,7 +562,7 @@ class OpenPRLabels(models.Model):
 
     def init(self):
         super().init()
-        drop_view_if_exists(self.env.cr, "runbot_merge_freeze_labels");
+        drop_view_if_exists(self.env.cr, "runbot_merge_freeze_labels")
         self.env.cr.execute("""
         CREATE VIEW runbot_merge_freeze_labels AS (
             SELECT DISTINCT ON (label)

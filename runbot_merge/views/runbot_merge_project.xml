@@ -8,10 +8,10 @@
                 <header>
                     <button type="object" name="action_prepare_freeze"
                             string="Freeze"
-                            attrs="{'invisible': [('freeze_id', '!=', False)]}"/>
+                            invisible="freeze_id"/>
                     <button type="object" name="action_prepare_freeze"
                             string="View Freeze" class="oe_highlight"
-                            attrs="{'invisible': [('freeze_id', '=', False)]}"/>
+                            invisible="not freeze_id"/>
                 </header>
                 <sheet>
                     <div class="oe_title">
@@ -25,9 +25,21 @@
                     <group>
                         <group>
                             <field name="github_token"/>
-                            <field name="secret"/>
+                            <field name="github_name" readonly="0"
+                                   help="Identity when creating new commits, defaults to github name, falls back to login."/>
+                            <field name="github_email" readonly="0"
+                                   help="Identity when creating new commits, defaults to public email, falls back to primary email."/>
+                            <span invisible="not (staging_statuses and staging_rpc)" class="alert alert-warning" role="alert">
+                                Avoid overlaps between GH and RPC as the older
+                                GH statuses may overwrite more recent RPC statuses.
+                            </span>
+                            <field name="staging_statuses" string="Validate via GH statuses"/>
+                            <field name="staging_rpc" string="Validate via direct RPC"/>
                         </group>
                         <group>
+                            <field name="staging_enabled" widget="boolean_toggle"/>
+                            <field name="staging_priority"/>
+                            <field name="uniquifier"/>
                             <field name="ci_timeout"/>
                             <field name="batch_limit"/>
                         </group>
@@ -46,6 +58,7 @@
                     <field name="repo_ids">
                         <tree>
                             <field name="sequence" widget="handle"/>
+                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open repo"/>
                             <field name="name"/>
                             <field name="branch_filter"/>
                             <field name="status_ids" widget="many2many_tags"/>
@@ -55,8 +68,10 @@
                     <field name="branch_ids">
                         <tree editable="bottom" decoration-muted="not active">
                             <field name="sequence" widget="handle" />
+                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open branch"/>
                             <field name="name"/>
-                            <field name="active"/>
+                            <field name="active" widget="boolean_toggle"/>
+                            <field name="staging_enabled" widget="boolean_toggle"/>
                         </tree>
                     </field>
                 </sheet>

@@ -1,20 +1,21 @@
 # -*- coding: utf-8 -*-
+import builtins
 import logging
-import pathlib
-import resource
-import subprocess
-import uuid
+import re
 from contextlib import ExitStack
 from datetime import datetime, timedelta
 
+import requests
+import sentry_sdk
 from dateutil import relativedelta
 
 from odoo import fields, models
+from odoo.addons.runbot_merge import git
 from odoo.addons.runbot_merge.github import GH
-from odoo.tools.appdirs import user_cache_dir
 
 # how long a merged PR survives
 MERGE_AGE = relativedelta.relativedelta(weeks=2)
+FOOTER = '\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port\n'
 
 _logger = logging.getLogger(__name__)
 
@@ -26,19 +27,34 @@ class Queue:
         raise NotImplementedError
 
     def _process(self):
-        for b in self.search(self._search_domain(), order='create_date, id', limit=self.limit):
+        skip = 0
+        from_clause, where_clause, params = self._search(self._search_domain(), order='create_date, id', limit=1).get_sql()
+        for _ in range(self.limit):
+            self.env.cr.execute(f"""
+                SELECT id FROM {from_clause}
+                WHERE {where_clause or "true"}
+                ORDER BY create_date, id
+                LIMIT 1 OFFSET %s
+                FOR UPDATE SKIP LOCKED
+            """, [*params, skip])
+            b = self.browse(self.env.cr.fetchone())
+            if not b:
+                return
+
             try:
-                b._process_item()
+                with sentry_sdk.start_span(description=self._name):
+                    b._process_item()
                 b.unlink()
                 self.env.cr.commit()
             except Exception:
                 _logger.exception("Error while processing %s, skipping", b)
                 self.env.cr.rollback()
-                b._on_failure()
+                if b._on_failure():
+                    skip += 1
                 self.env.cr.commit()
 
     def _on_failure(self):
-        pass
+        return True
 
     def _search_domain(self):
         return []
@@ -49,13 +65,25 @@ class ForwardPortTasks(models.Model, Queue):
 
     limit = 10
 
-    batch_id = fields.Many2one('runbot_merge.batch', required=True)
+    batch_id = fields.Many2one('runbot_merge.batch', required=True, index=True)
     source = fields.Selection([
         ('merge', 'Merge'),
         ('fp', 'Forward Port Followup'),
-        ('insert', 'New branch port')
+        ('insert', 'New branch port'),
+        ('complete', 'Complete ported batches'),
     ], required=True)
     retry_after = fields.Datetime(required=True, default='1900-01-01 01:01:01')
+    pr_id = fields.Many2one('runbot_merge.pull_requests')
+
+    def create(self, vals_list):
+        self.env.ref('forwardport.port_forward')._trigger()
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if retry := vals.get('retry_after'):
+            self.env.ref('forwardport.port_forward')\
+                ._trigger(fields.Datetime.to_datetime(retry))
+        return super().write(vals)
 
     def _search_domain(self):
         return super()._search_domain() + [
@@ -68,44 +96,169 @@ class ForwardPortTasks(models.Model, Queue):
 
     def _process_item(self):
         batch = self.batch_id
-        newbatch = batch.prs._port_forward()
+        sentry_sdk.set_tag('forward-porting', batch.prs.mapped('display_name'))
+        if self.source == 'complete':
+            self._complete_batches()
+            return
 
-        if newbatch:
-            _logger.info(
-                "Processing %s (from %s): %s (%s) -> %s (%s)",
-                self.id, self.source,
-                batch, batch.prs,
-                newbatch, newbatch.prs,
-            )
-            # insert new batch in ancestry sequence unless conflict (= no parent)
-            if self.source == 'insert':
-                for pr in newbatch.prs:
-                    if not pr.parent_id:
-                        break
-                    newchild = pr.search([
-                        ('parent_id', '=', pr.parent_id.id),
-                        ('id', '!=', pr.id),
-                    ])
-                    if newchild:
-                        newchild.parent_id = pr.id
-        else: # reached end of seq (or batch is empty)
+        newbatch = batch._port_forward()
+        if not newbatch:  # reached end of seq (or batch is empty)
             # FIXME: or configuration is fucky so doesn't want to FP (maybe should error and retry?)
             _logger.info(
-                "Processing %s (from %s): %s (%s) -> end of the sequence",
-                self.id, self.source,
-                batch, batch.prs
+                "Processed %s from %s (%s) -> end of the sequence",
+                batch, self.source, batch.prs.mapped('display_name'),
             )
-        batch.active = False
+            return
 
+        _logger.info(
+            "Processed %s from %s (%s) -> %s (%s)",
+            batch, self.source, ', '.join(batch.prs.mapped('display_name')),
+            newbatch, ', '.join(newbatch.prs.mapped('display_name')),
+        )
+        # insert new batch in ancestry sequence
+        if self.source == 'insert':
+            self._process_insert(batch, newbatch)
 
-CONFLICT_TEMPLATE = "{ping}WARNING: the latest change ({previous.head}) triggered " \
-                    "a conflict when updating the next forward-port " \
-                    "({next.display_name}), and has been ignored.\n\n" \
-                    "You will need to update this pull request differently, " \
-                    "or fix the issue by hand on {next.display_name}."
-CHILD_CONFLICT = "{ping}WARNING: the update of {previous.display_name} to " \
-                 "{previous.head} has caused a conflict in this pull request, " \
-                 "data may have been lost."
+    def _process_insert(self, batch, newbatch):
+        self.env['runbot_merge.batch'].search([
+            ('parent_id', '=', batch.id),
+            ('id', '!=', newbatch.id),
+        ]).parent_id = newbatch.id
+        # insert new PRs in ancestry sequence unless conflict (= no parent)
+        for pr in newbatch.prs:
+            next_target = pr._find_next_target()
+            if not next_target:
+                continue
+
+            # should have one since it was inserted before an other PR?
+            descendant = pr.search([
+                ('target', '=', next_target.id),
+                ('source_id', '=', pr.source_id.id),
+            ])
+
+            # copy the reviewing of the "descendant" (even if detached) to this pr
+            if reviewer := descendant.reviewed_by:
+                pr.reviewed_by = reviewer
+
+            # replace parent_id *if not detached*
+            if descendant.parent_id:
+                descendant.parent_id = pr.id
+
+    def _complete_batches(self):
+        source = pr = self.pr_id
+        if not pr:
+            _logger.warning(
+                "Unable to complete descendants of %s (%s): no new PR",
+                self.batch_id,
+                self.batch_id.prs.mapped('display_name'),
+            )
+            return
+        _logger.info(
+            "Completing batches for descendants of %s (added %s)",
+            self.batch_id.prs.mapped('display_name'),
+            self.pr_id.display_name,
+        )
+
+        gh = requests.Session()
+        repository = pr.repository
+        gh.headers['Authorization'] = f'token {repository.project_id.fp_github_token}'
+        PullRequests = self.env['runbot_merge.pull_requests']
+        self.env.cr.execute('LOCK runbot_merge_pull_requests IN SHARE MODE')
+
+        # TODO: extract complete list of targets from `_find_next_target`
+        #       so we can create all the forwardport branches, push them, and
+        #       only then create the PR objects
+        # TODO: maybe do that after making forward-port WC-less, so all the
+        #       branches can be pushed atomically at once
+        for descendant in self.batch_id.descendants():
+            target = pr._find_next_target()
+            if target is None:
+                _logger.info("Will not forward-port %s: no next target", pr.display_name)
+                return
+
+            if PullRequests.search_count([
+                ('source_id', '=', source.id),
+                ('target', '=', target.id),
+                ('state', 'not in', ('closed', 'merged')),
+            ]):
+                _logger.warning("Will not forward-port %s: already ported", pr.display_name)
+                return
+
+            if target != descendant.target:
+                self.env['runbot_merge.pull_requests.feedback'].create({
+                    'repository': repository.id,
+                    'pull_request': source.id,
+                    'token_field': 'fp_github_token',
+                    'message': """\
+{pr.ping}unable to port this PR forwards due to inconsistency: goes from \
+{pr.target.name} to {next_target.name} but {batch} ({batch_prs}) targets \
+{batch.target.name}.
+""".format(pr=pr, next_target=target, batch=descendant, batch_prs=', '.join(descendant.mapped('prs.display_name')))
+                })
+                return
+
+            ref = descendant.prs[:1].refname
+            # NOTE: ports the new source everywhere instead of porting each
+            #       PR to the next step as it does not *stop* on conflict
+            repo = git.get_local(source.repository)
+            conflict, head = source._create_fp_branch(repo, target)
+            repo.push(git.fw_url(pr.repository), f'{head}:refs/heads/{ref}')
+
+            remote_target = repository.fp_remote_target
+            owner, _ = remote_target.split('/', 1)
+            message = source.message + f"\n\nForward-Port-Of: {pr.display_name}"
+
+            title, body = re.match(r'(?P<title>[^\n]+)\n*(?P<body>.*)', message, flags=re.DOTALL).groups()
+            r = gh.post(f'https://api.github.com/repos/{pr.repository.name}/pulls', json={
+                'base': target.name,
+                'head': f'{owner}:{ref}',
+                'title': '[FW]' + (' ' if title[0] != '[' else '') + title,
+                'body': body
+            })
+            if not r.ok:
+                _logger.warning("Failed to create forward-port PR for %s, deleting branches", pr.display_name)
+                # delete all the branches this should automatically close the
+                # PRs if we've created any. Using the API here is probably
+                # simpler than going through the working copies
+                d = gh.delete(f'https://api.github.com/repos/{remote_target}/git/refs/heads/{ref}')
+                if d.ok:
+                    _logger.info("Deleting %s:%s=success", remote_target, ref)
+                else:
+                    _logger.warning("Deleting %s:%s=%s", remote_target, ref, d.text)
+                raise RuntimeError(f"Forwardport failure: {pr.display_name} ({r.text})")
+
+            new_pr = PullRequests._from_gh(r.json())
+            _logger.info("Created forward-port PR %s", new_pr)
+            new_pr.write({
+                'batch_id': descendant.id, # should already be set correctly but...
+                'merge_method': pr.merge_method,
+                'source_id': source.id,
+                # only link to previous PR of sequence if cherrypick passed
+                # FIXME: apply parenting of siblings? Apply parenting *to* siblings?
+                'parent_id': pr.id if not conflict else False,
+                'detach_reason': "{1}\n{2}".format(*conflict).strip() if conflict else None,
+            })
+
+            if conflict:
+                self.env.ref('runbot_merge.forwardport.failure.conflict')._send(
+                    repository=pr.repository,
+                    pull_request=pr.number,
+                    token_field='fp_github_token',
+                    format_args={'source': source, 'pr': pr, 'new': new_pr, 'footer': FOOTER},
+                )
+            new_pr._fp_conflict_feedback(pr, {pr: conflict})
+
+            labels = ['forwardport']
+            if conflict:
+                labels.append('conflict')
+            self.env['runbot_merge.pull_requests.tagging'].create({
+                'repository': new_pr.repository.id,
+                'pull_request': new_pr.number,
+                'tags_add': labels,
+            })
+
+            pr = new_pr
+
 class UpdateQueue(models.Model, Queue):
     _name = 'forwardport.updates'
     _description = 'if a forward-port PR gets updated & has followups (cherrypick succeeded) the followups need to be updated as well'
@@ -115,9 +268,13 @@ class UpdateQueue(models.Model, Queue):
     original_root = fields.Many2one('runbot_merge.pull_requests')
     new_root = fields.Many2one('runbot_merge.pull_requests')
 
+    def create(self, vals_list):
+        self.env.ref('forwardport.updates')._trigger()
+        return super().create(vals_list)
+
     def _process_item(self):
-        Feedback = self.env['runbot_merge.pull_requests.feedback']
         previous = self.new_root
+        sentry_sdk.set_tag("update-root", self.new_root.display_name)
         with ExitStack() as s:
             for child in self.new_root._iter_descendants():
                 self.env.cr.execute("""
@@ -134,45 +291,39 @@ class UpdateQueue(models.Model, Queue):
                     self.new_root.display_name
                 )
                 if child.state in ('closed', 'merged'):
-                    Feedback.create({
-                        'repository': child.repository.id,
-                        'pull_request': child.number,
-                        'message': "%sancestor PR %s has been updated but this PR"
-                                   " is %s and can't be updated to match."
-                                   "\n\n"
-                                   "You may want or need to manually update any"
-                                   " followup PR." % (
-                            child.ping(),
-                            self.new_root.display_name,
-                            child.state,
-                        )
-                    })
+                    self.env.ref('runbot_merge.forwardport.updates.closed')._send(
+                        repository=child.repository,
+                        pull_request=child.number,
+                        token_field='fp_github_token',
+                        format_args={'pr': child, 'parent': self.new_root},
+                    )
                     return
 
-                conflicts, working_copy = previous._create_fp_branch(
-                    child.target, child.refname, s)
+                repo = git.get_local(previous.repository)
+                conflicts, new_head = previous._create_fp_branch(repo, child.target)
+
                 if conflicts:
                     _, out, err, _ = conflicts
-                    Feedback.create({
-                        'repository': previous.repository.id,
-                        'pull_request': previous.number,
-                        'message': CONFLICT_TEMPLATE.format(
-                            ping=previous.ping(),
-                            previous=previous,
-                            next=child
-                        )
-                    })
-                    Feedback.create({
-                        'repository': child.repository.id,
-                        'pull_request': child.number,
-                        'message': CHILD_CONFLICT.format(ping=child.ping(), previous=previous, next=child)\
-                            + (f'\n\nstdout:\n```\n{out.strip()}\n```' if out.strip() else '')
-                            + (f'\n\nstderr:\n```\n{err.strip()}\n```' if err.strip() else '')
-                    })
+                    self.env.ref('runbot_merge.forwardport.updates.conflict.parent')._send(
+                        repository=previous.repository,
+                        pull_request=previous.number,
+                        token_field='fp_github_token',
+                        format_args={'pr': previous, 'next': child},
+                    )
+                    self.env.ref('runbot_merge.forwardport.updates.conflict.child')._send(
+                        repository=child.repository,
+                        pull_request=child.number,
+                        token_field='fp_github_token',
+                        format_args={
+                            'previous': previous,
+                            'pr': child,
+                            'stdout': (f'\n\nstdout:\n```\n{out.strip()}\n```' if out.strip() else ''),
+                            'stderr': (f'\n\nstderr:\n```\n{err.strip()}\n```' if err.strip() else ''),
+                        },
+                    )
 
-                new_head = working_copy.stdout().rev_parse(child.refname).stdout.decode().strip()
-                commits_count = int(working_copy.stdout().rev_list(
-                    f'{child.target.name}..{child.refname}',
+                commits_count = int(repo.stdout().rev_list(
+                    f'{child.target.name}..{new_head}',
                     count=True
                 ).stdout.decode().strip())
                 old_head = child.head
@@ -182,16 +333,11 @@ class UpdateQueue(models.Model, Queue):
                     # 'state': 'opened',
                     'squash': commits_count == 1,
                 })
-                # push the new head to the local cache: in some cases github
-                # doesn't propagate revisions fast enough so on the next loop we
-                # can't find the revision we just pushed
-                dummy_branch = str(uuid.uuid4())
-                ref = previous._get_local_directory()
-                working_copy.push(ref._directory, f'{new_head}:refs/heads/{dummy_branch}')
-                ref.branch('--delete', '--force', dummy_branch)
                 # then update the child's branch to the new head
-                working_copy.push(f'--force-with-lease={child.refname}:{old_head}',
-                                  'target', child.refname)
+                repo.push(
+                    f'--force-with-lease={child.refname}:{old_head}',
+                    git.fw_url(child.repository),
+                    f"{new_head}:refs/heads/{child.refname}")
 
                 # committing here means github could technically trigger its
                 # webhook before sending a response, but committing before
@@ -211,8 +357,12 @@ class DeleteBranches(models.Model, Queue):
 
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
+    def create(self, vals_list):
+        self.env.ref('forwardport.remover')._trigger(datetime.now() - MERGE_AGE)
+        return super().create(vals_list)
+
     def _search_domain(self):
-        cutoff = self.env.context.get('forwardport_merged_before') \
+        cutoff = getattr(builtins, 'forwardport_merged_before', None) \
              or fields.Datetime.to_string(datetime.now() - MERGE_AGE)
         return [('pr_id.merge_date', '<', cutoff)]
 
@@ -270,46 +420,3 @@ class DeleteBranches(models.Model, Queue):
                 r.json()
             )
         _deleter.info('✔ deleted branch %s of PR %s', self.pr_id.label, self.pr_id.display_name)
-
-_gc = _logger.getChild('maintenance')
-def _bypass_limits():
-    """Allow git to go beyond the limits set for Odoo.
-
-    On large repositories, git gc can take a *lot* of memory (especially with
-    `--aggressive`), if the Odoo limits are too low this can prevent the gc
-    from running, leading to a lack of packing and a massive amount of cruft
-    accumulating in the working copy.
-    """
-    resource.setrlimit(resource.RLIMIT_AS, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
-
-class GC(models.TransientModel):
-    _name = 'forwardport.maintenance'
-    _description = "Weekly maintenance of... cache repos?"
-
-    def _run(self):
-        # lock out the forward port cron to avoid concurrency issues while we're
-        # GC-ing it: wait until it's available, then SELECT FOR UPDATE it,
-        # which should prevent cron workers from running it
-        fp_cron = self.env.ref('forwardport.port_forward')
-        self.env.cr.execute("""
-            SELECT 1 FROM ir_cron
-            WHERE id = %s
-            FOR UPDATE
-        """, [fp_cron.id])
-
-        repos_dir = pathlib.Path(user_cache_dir('forwardport'))
-        # run on all repos with a forwardport target (~ forwardport enabled)
-        for repo in self.env['runbot_merge.repository'].search([('fp_remote_target', '!=', False)]):
-            repo_dir = repos_dir / repo.name
-            if not repo_dir.is_dir():
-                continue
-
-            _gc.info('Running maintenance on %s', repo.name)
-            r = subprocess.run(
-                ['git', '--git-dir', repo_dir, 'gc', '--aggressive', '--prune=now'],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                encoding='utf-8',
-                preexec_fn = _bypass_limits,
-            )
-            if r.returncode:
-                _gc.warning("Maintenance failure (status=%d):\n%s", r.returncode, r.stdout)

@@ -4,18 +4,6 @@ import re
 import pytest
 import requests
 
-@pytest.fixture
-def default_crons():
-    return [
-        'runbot_merge.process_updated_commits',
-        'runbot_merge.merge_cron',
-        'runbot_merge.staging_cron',
-        'forwardport.port_forward',
-        'forwardport.updates',
-        'runbot_merge.check_linked_prs_status',
-        'runbot_merge.feedback_cron',
-    ]
-
 # public_repo — necessary to leave comments
 # admin:repo_hook — to set up hooks (duh)
 # delete_repo — to cleanup repos created under a user

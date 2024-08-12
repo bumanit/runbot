@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import itertools
 import re
+import time
 
 from lxml import html
 
@@ -41,29 +42,76 @@ def _simple_init(repo):
     prx = repo.make_pr(title='title', body='body', target='master', head=c2)
     return prx
 
-class re_matches:
+class matches(str):
+    # necessary so str.__new__ does not freak out on `flags`
+    def __new__(cls, pattern, flags=0):
+        return super().__new__(cls, pattern)
+
     def __init__(self, pattern, flags=0):
-        self._r = re.compile(pattern, flags)
+        p, n = re.subn(
+            # `re.escape` will escape the `$`, so we need to handle that...
+            # maybe it should not be $?
+            r'\\\$(\w*?)\\\$',
+            lambda m: f'(?P<{m[1]}>.*?)' if m[1] else '(.*?)',
+            re.escape(self),
+        )
+        assert n, f"matches' pattern should have at least one placeholder, found none in\n{pattern}"
+        self._r = re.compile(p, flags | re.DOTALL)
 
     def __eq__(self, text):
-        return self._r.match(text)
-
-    def __repr__(self):
-        return self._r.pattern + '...'
+        if not isinstance(text, str):
+            return NotImplemented
+        return self._r.search(text)
 
 def seen(env, pr, users):
-    return users['user'], f'[Pull request status dashboard]({to_pr(env, pr).url}).'
+    url = to_pr(env, pr).url
+    return users['user'], f'[![Pull request status dashboard]({url}.png)]({url})'
 
-def make_basic(env, config, make_repo, *, reponame='proj', project_name='myproject'):
-    """ Creates a basic repo with 3 forking branches
+def make_basic(
+        env,
+        config,
+        make_repo,
+        *,
+        project_name='myproject',
+        reponame='proj',
+        statuses='legal/cla,ci/runbot',
+        fp_token=True,
+        fp_remote=True,
+):
+    """ Creates a project ``project_name`` **if none exists**, otherwise
+    retrieves the existing one and adds a new repository and its fork.
 
-    f = 0 -- 1 -- 2 -- 3 -- 4  : a
-                  |
-    g =           `-- 11 -- 22 : b
-                     |
-    h =               `-- 111  : c
+    Repositories are setup with three forking branches:
+
+    ::
+
+        f = 0 -- 1 -- 2 -- 3 -- 4  : a
+                      |
+        g =           `-- 11 -- 22 : b
+                         |
+        h =               `-- 111  : c
+
     each branch just adds and modifies a file (resp. f, g and h) through the
     contents sequence a b c d e
+
+    :param env: Environment, for odoo model interactions
+    :param config: pytest project config thingie
+    :param make_repo: repo maker function, normally the fixture, should be a
+                      ``Callable[[str], Repo]``
+    :param project_name: internal project name, can be used to recover the
+                         project object afterward, matches exactly since it's
+                         unique per odoo db (and thus test)
+    :param reponame: the base name of the repository, for identification, for
+                     concurrency reasons the actual repository name *will* be
+                     different
+    :param statuses: required statuses for the repository, stupidly default to
+                     the old Odoo statuses, should be moved to ``default`` over
+                     time for simplicity (unless the test specifically calls for
+                     multiple statuses)
+    :param fp_token: whether to set the ``fp_github_token`` on the project if
+                     / when creating it
+    :param fp_remote: whether to create a fork repo and set it as the
+                      repository's ``fp_remote_target``
     """
     Projects = env['runbot_merge.project']
     project = Projects.search([('name', '=', project_name)])
@@ -72,15 +120,17 @@ def make_basic(env, config, make_repo, *, reponame='proj', project_name='myproje
             'name': project_name,
             'github_token': config['github']['token'],
             'github_prefix': 'hansen',
-            'fp_github_token': config['github']['token'],
+            'fp_github_token': fp_token and config['github']['token'],
+            'fp_github_name': 'herbert',
             'branch_ids': [
-                (0, 0, {'name': 'a', 'sequence': 100, 'fp_target': True}),
-                (0, 0, {'name': 'b', 'sequence': 80, 'fp_target': True}),
-                (0, 0, {'name': 'c', 'sequence': 60, 'fp_target': True}),
+                (0, 0, {'name': 'a', 'sequence': 100}),
+                (0, 0, {'name': 'b', 'sequence': 80}),
+                (0, 0, {'name': 'c', 'sequence': 60}),
             ],
         })
 
     prod = make_repo(reponame)
+    env['runbot_merge.events_sources'].create({'repository': prod.name})
     with prod:
         a_0, a_1, a_2, a_3, a_4, = prod.make_commits(
             None,
@@ -102,12 +152,13 @@ def make_basic(env, config, make_repo, *, reponame='proj', project_name='myproje
             Commit('111', tree={'h': 'a'}),
             ref='heads/c',
         )
-    other = prod.fork()
+    other = prod.fork() if fp_remote else None
     repo = env['runbot_merge.repository'].create({
         'project_id': project.id,
         'name': prod.name,
-        'required_statuses': 'legal/cla,ci/runbot',
-        'fp_remote_target': other.name,
+        'required_statuses': statuses,
+        'fp_remote_target': other.name if other else False,
+        'group_id': False,
     })
     env['res.partner'].search([
         ('github_login', '=', config['role_reviewer']['user'])
@@ -126,14 +177,26 @@ def pr_page(page, pr):
     return html.fromstring(page(f'/{pr.repo.name}/pull/{pr.number}'))
 
 def to_pr(env, pr):
-    pr = env['runbot_merge.pull_requests'].search([
-        ('repository.name', '=', pr.repo.name),
-        ('number', '=', pr.number),
-    ])
-    assert len(pr) == 1, f"Expected to find {pr.repo.name}#{pr.number}, got {pr}."
-    return pr
+    for _ in range(5):
+        pr_id = env['runbot_merge.pull_requests'].search([
+            ('repository.name', '=', pr.repo.name),
+            ('number', '=', pr.number),
+        ])
+        if pr_id:
+            assert len(pr_id) == 1, f"Expected to find {pr.repo.name}#{pr.number}, got {pr_id}."
+            return pr_id
+        time.sleep(1)
+
+    raise TimeoutError(f"Unable to find {pr.repo.name}#{pr.number}")
 
 def part_of(label, pr_id, *, separator='\n\n'):
     """ Adds the "part-of" pseudo-header in the footer.
     """
-    return f'{label}{separator}Part-of: {pr_id.display_name}'
+    return f"""\
+{label}{separator}\
+Part-of: {pr_id.display_name}
+Signed-off-by: {pr_id.reviewed_by.formatted_email}"""
+
+def ensure_one(records):
+    assert len(records) == 1
+    return records

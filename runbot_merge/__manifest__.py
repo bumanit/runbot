@@ -1,14 +1,18 @@
 {
     'name': 'merge bot',
-    'version': '1.7',
-    'depends': ['contacts', 'website'],
+    'version': '1.15',
+    'depends': ['contacts', 'mail', 'website'],
     'data': [
         'security/security.xml',
         'security/ir.model.access.csv',
 
         'data/merge_cron.xml',
+        'models/crons/git_maintenance.xml',
+        'models/crons/cleanup_scratch_branches.xml',
+        'data/runbot_merge.pull_requests.feedback.template.csv',
         'views/res_partner.xml',
         'views/runbot_merge_project.xml',
+        'views/batch.xml',
         'views/mergebot.xml',
         'views/queues.xml',
         'views/configuration.xml',
