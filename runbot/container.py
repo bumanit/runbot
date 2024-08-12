@@ -121,7 +121,7 @@ def _docker_build(build_dir, image_tag):
         return (False, e.explanation)
     except docker.errors.BuildError as e:
         _logger.error('Build of image %s failed', image_tag)
-        msg = f"{e.msg}\n{''.join(l.get('stream') or '' for l in e.build_log)}"
+        msg = f"{''.join(l.get('stream') or '' for l in e.build_log)}\nERROR:{e.msg}"
         return (False, msg)
 
 
