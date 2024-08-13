@@ -21,6 +21,9 @@
         'models/staging_cancel/views.xml',
     ],
     'assets': {
+       'web._assets_primary_variables': [
+          ('prepend', 'runbot_merge/static/scss/primary_variables.scss'),
+       ],
         'web.assets_frontend': [
             'runbot_merge/static/scss/runbot_merge.scss',
         ],

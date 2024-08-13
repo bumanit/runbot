@@ -1,0 +1,48 @@
+// colors from the original mergebot
+$primary: #276e72;
+$secondary: #685563;
+$success: #28a745;
+$info: #17a2b8;
+$warning: #ffc107;
+$danger: #dc3545;
+$theme-colors: (
+  "primary":    $primary,
+  "secondary":  $secondary,
+  "success":    $success,
+  "info":       $info,
+  "warning":    $warning,
+  "danger":     $danger,
+);
+
+$o-system-fonts: sans-serif;
+
+// mostly revets a bunch of shit from the default odoo theming
+$link-color: $primary;
+$o-community-color: $primary;
+$o-enterprise-color: $primary;
+
+$font-size-root:              null;
+$font-size-base:              1rem;
+$font-size-sm:                $font-size-base * .875;
+$font-size-lg:                $font-size-base * 1.25;
+
+$font-weight-lighter:         lighter;
+$font-weight-light:           300;
+$font-weight-normal:          400;
+$font-weight-bold:            700;
+$font-weight-bolder:          bolder;
+
+$font-weight-base:            $font-weight-normal;
+
+$line-height-base:            1.5;
+$line-height-sm:              1.25;
+$line-height-lg:              2;
+
+$h1-font-size:                $font-size-base * 2.5;
+$h2-font-size:                $font-size-base * 2;
+$h3-font-size:                $font-size-base * 1.75;
+$h4-font-size:                $font-size-base * 1.5;
+$h5-font-size:                $font-size-base;
+$h6-font-size:                $font-size-base;
+
+$border-radius: 0.25rem;

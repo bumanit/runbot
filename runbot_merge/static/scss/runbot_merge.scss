@@ -10,10 +10,9 @@ body {
 }
 h1, h2, h3, h4, h5, h6{
   color: inherit;
-  margin-top: 0.66em;
-  margin-bottom: 0.33em;
+  margin-top: 0.66em !important;
+  margin-bottom: 0.33em !important;
 }
-h5 { font-size: 1em; }
 .bg-success, .bg-info, .bg-warning, .bg-danger, .bg-gray-lighter,
 .table-success, .table-info, .table-warning, .table-danger {
   color: inherit;
@@ -22,17 +21,23 @@ h5 { font-size: 1em; }
   color: inherit;
 }
 
+// FIXME: move these over to the primary variables or some shit, but bg-info is completely fucked
 $mergebot-colors: ("success": #dff0d8, "danger": #f2dede, "warning": #fcf8e3, "info": #d9edf7);
 @each $category, $color in $mergebot-colors {
   .bg-#{$category} {
     background-color: $color !important;
   }
   .table-#{$category} {
-    background-color: $color !important;
+    --table-bg: #{$color};
+    --table-accent-bg: transparent;
     &.table-active {
-      background-color: scale-color($color, $lightness: -5%) !important;
+      // TODO: make that a runtime operation
+      --table-bg: #{scale-color($color, $lightness: -5%)};
     }
   }
+}
+.alert-primary {
+  background-color: #d7eaeb !important;
 }
 .bg-unmerged {
   background-color: #dcefe8 !important
@@ -124,10 +129,10 @@ dl.runbot-merge-fields {
   @extend .pt-1;
   // because there's a trailing space which is annoying to remove, which plays
   // the role of padding-right
-  @extend .pl-1;
+  @extend .ps-1;
   @extend .text-nowrap;
   // works better for the left edge of the *box*
-  @extend .border-left;
+  @extend .border-start;
 }
 
 // batches sequence table in PR dashboard: mostly uses (customised) bootstrap

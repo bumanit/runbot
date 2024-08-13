@@ -429,7 +429,7 @@
                     <a t-att-href="pr.github_url" t-field="pr.display_name">
                     </a>
                     <a t-attf-href="/web#view_type=form&amp;model=runbot_merge.pull_requests&amp;id={{pr.id}}"
-                        class="btn btn-sm btn-secondary align-top float-right"
+                        class="btn btn-sm btn-secondary align-top float-end"
                         groups="runbot_merge.group_admin">View in backend</a>
                 </h1>
                 <h6>Created by <span t-field="pr.author.display_name"/></h6>
