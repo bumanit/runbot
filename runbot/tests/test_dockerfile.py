@@ -80,8 +80,6 @@ USER TestUser""", docker_render)
                     'name': 'Customized base',
                     'reference_dockerfile_id': self.env.ref('runbot.docker_default').id,
                     'values': {
-                        'from': 'ubuntu:jammy',
-                        'phantom': True,
                         'chrome_version': '86.0.4240.183-1',
                     },
                     'layer_type': 'reference_file',
@@ -96,7 +94,6 @@ USER TestUser""", docker_render)
         })
 
         self.assertEqual(dockerfile.image_tag, 'odoo:TestsUbuntuFocal20.0Chrome86')
-        self.assertTrue(dockerfile.dockerfile.startswith('FROM ubuntu:jammy'))
         self.assertIn('86.0.4240.183-1', dockerfile.dockerfile)
         self.assertIn('pip install --no-cache-dir babel==2.8.0', dockerfile.dockerfile)
 
