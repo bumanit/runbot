@@ -60,12 +60,12 @@
                     </group>
                     <group>
                         <group colspan="4" string="Review Rights">
-                            <div colspan="4" class="alert alert-warning" role="alert" invisible="not review_rights">
+                            <div colspan="2" class="alert alert-warning" role="alert" invisible="not review_rights">
                                 Review access requires successfully following
                                 the Code Review (QDP) and Security (DLE)
                                 trainings. Please check before giving r+ access.
                             </div>
-                            <field colspan="4" name="review_rights" nolabel="1">
+                            <field colspan="2" name="review_rights" nolabel="1">
                                 <tree string="Review ACLs" editable="bottom">
                                     <field name="repository_id"/>
                                     <field name="review"/>
@@ -73,18 +73,18 @@
                                 </tree>
                             </field>
                         </group>
-                        <group colspan="4">
-                            <div colspan="4" class="alert alert-danger" role="alert" invisible="not override_sensitive">
+                        <group colspan="2">
+                            <div colspan="2" class="alert alert-danger" role="alert" invisible="not override_sensitive">
                                 Security Override <b>REQUIRES</b> successfully
                                 following the Security training. Please ask DLE
                                 before granting access.
                             </div>
-                            <field colspan="4" name="override_rights" widget="many2many_tags"/>
+                            <field colspan="2" name="override_rights" widget="many2many_tags"/>
                         </group>
                     </group>
                     <group>
-                        <group colspan="4" string="Delegate On">
-                            <field name="delegate_reviewer" nolabel="1">
+                        <group colspan="2" string="Delegate On">
+                            <field name="delegate_reviewer" nolabel="1" colspan="2">
                                 <tree>
                                     <field name="repository"/>
                                     <field name="number"/>

@@ -123,27 +123,33 @@
         <field name="model">runbot_merge.pull_requests</field>
         <field name="arch" type="xml">
             <form>
-                <div class="o_form_statusbar">
-                    <span class="o_statusbar_buttons">
+                <header>
+                    <div class="d-flex gap-1">
                         <button type="object" name="button_split" string="Split Off"/>
-                        <field name="github_url" widget="url" class="btn btn-secondary" text="Github"/>
-                        <field name="url" widget="url" class="btn btn-secondary" text="Frontend"/>
-                    </span>
-                </div>
+                        <field name="github_url" widget="url" class="btn btn-secondary mb-0" text="Github"/>
+                        <field name="url" widget="url" class="btn btn-secondary mb-0" text="Frontend"/>
+                    </div>
+                </header>
                 <sheet>
                     <field name="project" invisible="1"/>
                     <field name="target_sequence" invisible="1"/>
-                    <div class="oe_title">
+                    <div class="oe_title" colspan="2">
                         <h1>
-                            <field name="repository"/>#<field name="number"/>
+                            <field name="repository" readonly="True"/>#<field name="number" readonly="True"/>
                         </h1>
                         <h2>
-                          <field name="state"/>
-                          <span invisible="state == 'merged' or not blocked">
-                            (blocked: <field name="blocked"/>)
-                          </span>
+                            <field name="state"/>
+                            <span invisible="state == 'merged' or not blocked">
+                                <!--
+                                The web client forces char fields to take 100%
+                                width in all situations without (as far as I
+                                can tell) opt out, if the view is in edition
+                                mode. Which is now always the case for form views.
+                                -->
+                                (blocked: <field name="blocked" class="w-auto"/>)
+                            </span>
                             <span invisible="state != 'merged'">
-                                (<field name="merge_date"/>)
+                                (<field name="merge_date" readonly="True"/>)
                             </span>
                         </h2>
                     </div>
@@ -179,11 +185,6 @@
                                     </details>
                                 </group>
                             </group>
-                            <group>
-                                <group colspan="4">
-                                    <field name="blocked"/>
-                                </group>
-                            </group>
                         </page>
                         <page name="configuration" string="Configuration">
                             <group>
@@ -200,7 +201,7 @@
                             </group>
                             <group string="Delegates">
                                 <group colspan="4">
-                                    <field name="delegates" nolabel="1">
+                                    <field colspan="2" name="delegates" nolabel="1">
                                         <tree>
                                             <button type="object" name="get_formview_action" icon="fa-external-link" title="open partner"/>
                                             <field name="name"/>
@@ -213,7 +214,7 @@
                         <page name="stagings" string="Staging History">
                             <group>
                                 <group colspan="4">
-                                    <field name="staging_ids" nolabel="1" readonly="1">
+                                    <field colspan="2" name="staging_ids" nolabel="1" readonly="1">
                                         <tree>
                                             <button type="object" name="get_formview_action" icon="fa-external-link" title="open staging"/>
                                             <field name="staged_at"/>
@@ -234,10 +235,8 @@
                                         invisible="source_id and not parent_id"
                                         string="Detached because" name="detach_reason" readonly="1"/>
                                 </group>
-                            </group>
-                            <group>
-                              <group colspan="4">
-                                <field name="forwardport_ids" nolabel="1" readonly="True">
+                              <group>
+                                <field colspan="2" name="forwardport_ids" nolabel="1" readonly="True">
                                   <tree>
                                     <button type="object" name="get_formview_action" icon="fa-external-link" title="open PR"/>
                                     <field name="target" string="Branch"/>
@@ -251,7 +250,7 @@
                     <!-- influencers -->
                     <group string="Message">
                         <group colspan="4">
-                            <field name="message" nolabel="1"/>
+                            <field colspan="2" name="message" nolabel="1" readonly="1"/>
                         </group>
                     </group>
                 </sheet>

@@ -57,7 +57,7 @@
                     </group>
                     <group string="Pull Requests">
                         <group colspan="4">
-                            <field name="all_prs" nolabel="1" readonly="1">
+                            <field colspan="2" name="all_prs" nolabel="1" readonly="1">
                                 <tree>
                                     <button type="object" name="get_formview_action" icon="fa-external-link" title="open PR"/>
                                     <field name="display_name"/>
@@ -69,7 +69,7 @@
                     </group>
                     <group string="Genealogy">
                         <group colspan="4">
-                            <field name="genealogy_ids" nolabel="1" readonly="1">
+                            <field colspan="2" name="genealogy_ids" nolabel="1" readonly="1">
                                 <tree decoration-muted="id == parent.id">
                                     <button type="object" name="get_formview_action" icon="fa-external-link" title="open batch"/>
                                     <field name="name"/>
@@ -81,7 +81,7 @@
                     </group>
                     <group string="Stagings">
                         <group colspan="4">
-                            <field name="staging_ids" nolabel="1" readonly="1">
+                            <field colspan="2" name="staging_ids" nolabel="1" readonly="1">
                                 <tree>
                                     <button type="object" name="get_formview_action" icon="fa-external-link" title="open staging"/>
                                     <field name="staged_at"/>
