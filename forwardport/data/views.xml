@@ -36,7 +36,7 @@
                     <t t-foreach="groups" t-as="group">
                         <span>
                             <t t-if="group == current_group">
-                                <span class="bg-primary">
+                                <span class="bg-primary text-bg-primary">
                                     <t t-out="group.display_name"/>
                                     (<t t-out="outstanding_per_group[group]"/>)
                                 </span>
@@ -57,7 +57,7 @@
                         <t t-set="created" t-value="outstanding_per_author[culprit]"/>
                         <a t-att-href="link(partner=culprit.id)"
                            t-attf-title="approved {{approved}}, created {{created}}"
-                           t-att-class="'bg-primary' if culprit == env.user.partner_id else None"
+                           t-att-class="'bg-primary text-bg-primary' if culprit == env.user.partner_id else None"
                         ><t t-out="culprit.name"/>:
                             <t t-if="approved" t-out="approved"/>
                             <t t-if="approved and created"> + </t>
