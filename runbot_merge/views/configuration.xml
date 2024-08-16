@@ -33,11 +33,11 @@
         </field>
     </record>
 
-    <record id="action_feedback" model="ir.actions.act_window">
+    <record id="action_feedback_template" model="ir.actions.act_window">
         <field name="name">Feedback Templates tree</field>
         <field name="res_model">runbot_merge.pull_requests.feedback.template</field>
     </record>
-    <record id="tree_feedback" model="ir.ui.view">
+    <record id="tree_feedback_template" model="ir.ui.view">
         <field name="name">Feedback Templates</field>
         <field name="model">runbot_merge.pull_requests.feedback.template</field>
         <field name="arch" type="xml">
@@ -47,7 +47,7 @@
             </tree>
         </field>
     </record>
-    <record id="form_feedback" model="ir.ui.view">
+    <record id="form_feedback_template" model="ir.ui.view">
         <field name="name">Feedback Templates form</field>
         <field name="model">runbot_merge.pull_requests.feedback.template</field>
         <field name="arch" type="xml">
@@ -84,7 +84,7 @@
         <menuitem name="Review Rights" id="menu_configuration_review"
                   action="action_review"/>
         <menuitem name="Feedback Templates" id="menu_configuration_feedback"
-                  action="action_feedback"/>
+                  action="action_feedback_template"/>
         <menuitem name="Events Sources" id="menu_configuration_events_sources"
                   action="action_events_sources"/>
     </menuitem>
