@@ -23,10 +23,10 @@ class BuilderClient(RunbotClient):
         self.last_docker_update = None
 
     def loop_turn(self):
-        last_docker_update = max(self.env['runbot.dockerfile'].search([('to_build', '=', True)]).mapped('write_date'))
-        if self.count == 1 or self.last_docker_update != last_docker_update:
+        last_docker_updates = self.env['runbot.dockerfile'].search([('to_build', '=', True)]).mapped('write_date')
+        if self.count == 1 or last_docker_updates and self.last_docker_update != max(last_docker_updates):
             self.host._docker_build()
-            self.last_docker_update = last_docker_update
+            self.last_docker_update = max(last_docker_updates)
         if self.count == 1:  # cleanup at second iteration
             self.env['runbot.runbot']._source_cleanup()
             self.env['runbot.build']._local_cleanup()
