@@ -622,6 +622,7 @@ class BuildResult(models.Model):
         if candidate_for_partial_gc:
             for dest in _filter(candidate_for_partial_gc, label='workspace'):
                 build_dir = Path(builds_dir) / dest
+                gcstamp = build_dir / '.gcstamp'
                 for bdir_file in build_dir.iterdir():
                     if bdir_file.is_dir() and bdir_file.name not in ('logs', 'tests'):
                         shutil.rmtree(bdir_file)
