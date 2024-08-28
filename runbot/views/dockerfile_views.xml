@@ -7,7 +7,9 @@
           <form string="Dockerfile">
             <sheet>
               <widget name="web_ribbon" title="Empty" bg_color="bg-warning" invisible="dockerfile != ''"/>
+              <widget name="web_ribbon" title="Archived" bg_color="bg-danger" invisible="active"/>
               <group>
+                <field name="active" invisible="1"/>
                 <field name="name"/>
                 <field name="image_tag"/>
                 <field name="to_build"/>

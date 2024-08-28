@@ -124,6 +124,7 @@ class Dockerfile(models.Model):
     _description = "Dockerfile"
 
     name = fields.Char('Dockerfile name', required=True, help="Name of Dockerfile")
+    active = fields.Boolean('Active', default=True, tracking=True)
     image_tag = fields.Char(compute='_compute_image_tag', store=True)
     template_id = fields.Many2one('ir.ui.view', string='Docker Template', domain=[('type', '=', 'qweb')], context={'default_type': 'qweb', 'default_arch_base': '<t></t>'})
     arch_base = fields.Text(related='template_id.arch_base', readonly=False, related_sudo=True)
