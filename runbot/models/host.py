@@ -132,7 +132,7 @@ class Host(models.Model):
             _logger.info('Pulling docker images...')
             for dockerfile in all_docker_files:
                 remote_tag = f'dockerhub.{docker_registry_host.name}/{dockerfile.image_tag}'
-                pull_result, image = docker_pull(remote_tag)
+                pull_result, image = docker_pull(f'dockerhub.{docker_registry_host.name}/odoo', dockerfile.split(':')[1])
                 if pull_result:
                     image.tag(dockerfile.image_tag)
         else:

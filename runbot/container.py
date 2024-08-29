@@ -110,31 +110,32 @@ def _docker_build(build_dir, image_tag):
     :param image_tag: name used to tag the resulting docker image
     :return: tuple(success, msg) where success is a boolean and msg is the error message or None
     """
-    result = {
-        'image': False,
-        'msg': '',
-    }
-    docker_client = docker.from_env()
-    start = time.time()
-    try:
-        docker_image, result_stream = docker_client.images.build(path=build_dir, tag=image_tag, rm=True)
-        result_stream = list(result_stream)
-        msg = ''.join([r.get('stream', '') for r in result_stream])
-        result['image'] = docker_image
-        result['msg'] = msg
-    except docker.errors.APIError as e:
-        _logger.error('Build of image %s failed', image_tag)
-        result['msg'] = e.explanation
-    except docker.errors.BuildError as e:
-        _logger.error('Build of image %s failed', image_tag)
-        msg = f"{''.join(l.get('stream') or '' for l in e.build_log)}\nERROR:{e.msg}"
-        result['msg'] = msg
 
-    duration = time.time() - start
-    if duration > 1:
-        _logger.info('Dockerfile %s finished build in %s', image_tag, duration)
-    result['duration'] = duration
-    return result
+    with DockerManager(image_tag) as dm:
+        last_step = None
+        dm.result['success'] = False  # waiting for an image_id
+        for chunk in dm.consume(dm.docker_client.api.build(path=build_dir, tag=image_tag, rm=True)):
+            if 'stream' in chunk:
+                stream = chunk['stream']
+                if stream.startswith('Step '):
+                    last_step = stream[:120] + '...'
+                    if dm.log_progress:
+                        _logger.info(last_step)
+                if not dm.log_progress and ('running in' in stream or dm.duration > 1):
+                    dm.log_progress = True
+                    _logger.info('Building dockerfile %s', image_tag)
+                    if last_step:
+                        _logger.info(last_step)
+                match = re.search(
+                    r'(^Successfully built |sha256:)([0-9a-f]+)$',
+                    chunk['stream'],
+                )
+                if match:
+                    dm.result['image_id'] = match.group(2)
+                    dm.result['success'] = True
+                    break
+        return dm.result
+
 
 def docker_push(image_tag):
     return _docker_push(image_tag)
@@ -145,30 +146,67 @@ def _docker_push(image_tag):
     :param image_tag: the image tag (or id) to push
     :return: tuple(success, msg) where success is a boolean and msg is the error message or None
     """
-    docker_client = docker.from_env()
-    try:
-        image = docker_client.images.get(image_tag)
-    except docker.errors.ImageNotFound:
-        return (False, f"Docker image '{image_tag}' not found.")
 
-    push_tag = f'127.0.0.1:5001/{image_tag}'
-    image.tag(push_tag)
-    error = None
-    try:
-        for push_progress in docker_client.images.push(push_tag, stream=True, decode=True):
-            # the push method is supposed to raise in cases of API errors but doesn't in other cases
-            # e.g. connection errors or the image tag does not exists locally ...
-            if 'error' in push_progress:
-                error = str(push_progress)  # just stringify the whole as it might contains other keys like errorDetail ...
-    except docker.errors.APIError as e:
-        error = e
-    if error:
-        return (False, error)
-    return (True, None)
+    with DockerManager(image_tag) as dm:
+        image = dm.docker_client.images.get(image_tag)
+        push_tag = f'127.0.0.1:5001/{image_tag}'
+        image.tag(push_tag)
+        for chunk in dm.consume(dm.docker_client.api.push(push_tag, stream=True)):
+            if not dm.log_progress and 'Pushing' in chunk.get('status', ''):
+                dm.log_progress = True
+                _logger.info('Pushing %s', image_tag)
+        return dm.result
 
 
 def docker_pull(image_tag):
     return _docker_pull(image_tag)
+
+
+class DockerManager:
+    def __init__(self, image_tag):
+        self.image_tag = image_tag
+
+    def __enter__(self):
+        self.start = time.time()
+        self.duration = 0
+        self.docker_client = docker.from_env()
+        self.result = {
+            'msg': '',
+            'image': False,
+            'success': True,
+        }
+        self.log_progress = False
+        return self
+
+    def consume(self, stream):
+        for chunk in docker.utils.json_stream.json_stream(stream):
+            self.duration = time.time() - self.start
+            if 'error' in chunk:
+                _logger.error(chunk['error'])
+                self.result['msg'] += chunk['error']
+                #self.result['msg'] += str(chunk.get('errorDetail', ''))
+                self.result['msg'] += '\n'
+                self.result['success'] = False
+                break
+            if 'stream' in chunk:
+                self.result['msg'] += chunk['stream']
+            if 'status' in chunk:
+                self.result['msg'] += chunk['status']
+                if 'progress' in chunk:
+                    self.result['msg'] += chunk['progress']
+                self.result['msg'] += '\n'
+            yield chunk
+
+    def __exit__(self, exception_type, exception_value, exception_traceback):
+        if self.log_progress:
+            _logger.info('Finished in %s', self.duration)
+        if exception_value:
+            self.result['success'] = False
+            _logger.warning(exception_value)
+            self.result['msg'] += str(exception_value)
+        self.result['duration'] = self.duration
+        if self.result['success']:
+            self.result['image'] = self.docker_client.images.get(self.image_tag)
 
 
 def _docker_pull(image_tag):
@@ -177,14 +215,12 @@ def _docker_pull(image_tag):
     e.g.: `dockerhub.runbot102.odoo.com/odoo:PureNobleTest`
     :return: tuple(success, image) where success is a boolean and image a Docker image object or None in case of failure
     """
-    docker_client = docker.from_env()
-    try:
-        image = docker_client.images.pull(image_tag)
-    except docker.errors.APIError:
-        message = f"failed Docker pull for {image_tag}"
-        _logger.warning(message)
-        return (False, None)
-    return (True, image)
+    with DockerManager(image_tag) as dm:
+        for chunk in dm.consume(dm.docker_client.api.pull(image_tag, stream=True)):
+            if not dm.log_progress and 'Downloading' in chunk['status']:
+                dm.log_progress = True
+                _logger.info('Pulling %s', image_tag)
+        return dm.result
 
 
 def docker_remove(image_tag):

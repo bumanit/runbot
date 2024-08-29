@@ -27,7 +27,7 @@ class BuilderClient(RunbotClient):
         docker_registry_host_id = icp.get_param('runbot.docker_registry_host_id', default=False)
         is_registry = docker_registry_host_id == str(self.host.id)
         if is_registry:
-            self.env['runbot.runbot']._start_docker_registry(self.host)
+            self.env['runbot.runbot']._start_docker_registry()
         last_docker_updates = self.env['runbot.dockerfile'].search([('to_build', '=', True)]).mapped('write_date')
         if self.count == 1 or self.last_docker_updates != last_docker_updates:
             self.last_docker_updates = last_docker_updates

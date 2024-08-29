@@ -384,7 +384,7 @@ class Runbot(models.AbstractModel):
         if ignored:
             _logger.info('docker (%s) not deleted because not dest format', list(ignored))
 
-    def _start_docker_registry(self, host):
+    def _start_docker_registry(self):
         """
         Start a docker registry if not already running.
         The registry is in `always_restart` mode, meaning that it will restart properly after a reboot.
@@ -409,7 +409,7 @@ class Runbot(models.AbstractModel):
                 name='runbot-registry',
                 volumes={f'{os.path.join(self._root(), "docker-registry")}':{'bind': '/var/lib/registry', 'mode': 'rw'}},
                 ports={5000: ('127.0.0.1', 5001)},
-                restart_policy= {"Name": "always"},
+                restart_policy={"Name": "always"},
                 detach=True
             )
             _logger.info('Docker registry started')
