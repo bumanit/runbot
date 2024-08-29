@@ -132,9 +132,9 @@ class Host(models.Model):
             _logger.info('Pulling docker images...')
             for dockerfile in all_docker_files:
                 remote_tag = f'dockerhub.{docker_registry_host.name}/{dockerfile.image_tag}'
-                pull_result, image = docker_pull(remote_tag)
-                if pull_result:
-                    image.tag(dockerfile.image_tag)
+                result = docker_pull(remote_tag)
+                if result['success']:
+                    result['image'].tag(dockerfile.image_tag)
         else:
             _logger.info('Building docker images...')
             for dockerfile in self.env['runbot.dockerfile'].search([('to_build', '=', True)]):

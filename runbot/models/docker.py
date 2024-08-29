@@ -2,8 +2,6 @@ import getpass
 import logging
 import os
 import re
-import time
-
 from odoo import api, fields, models
 from odoo.addons.base.models.ir_qweb import QWebException
 
@@ -296,20 +294,19 @@ class Dockerfile(models.Model):
 
         with open(self.env['runbot.runbot']._path('docker', self.image_tag, 'Dockerfile'), 'w') as Dockerfile:
             Dockerfile.write(content)
-
         result = docker_build(docker_build_path, self.image_tag)
-        docker_build_identifier = result['image']
         duration = result['duration']
         msg = result['msg']
+        success = image_id = result['image_id']
         docker_build_result_values = {'dockerfile_id': self.id, 'output': msg, 'duration': duration, 'content': content, 'host_id': host and host.id}
-        if docker_build_identifier:
+        if success:
             docker_build_result_values['result'] = 'success'
-            docker_build_result_values['identifier'] = docker_build_identifier.id
+            docker_build_result_values['identifier'] = image_id
         else:
             docker_build_result_values['result'] = 'error'
             self.to_build = False
 
-        should_save_result = not docker_build_identifier  # always save in case of failure
+        should_save_result = not success  # always save in case of failure
         if not should_save_result:
             # check previous result anyway
             previous_result = self.env['runbot.docker_build_result'].search([
@@ -317,7 +314,7 @@ class Dockerfile(models.Model):
                 ('host_id', '=', host and host.id),
             ], order='id desc', limit=1)
             # identifier changed
-            if docker_build_identifier.id != previous_result.identifier:
+            if image_id != previous_result.identifier:
                 should_save_result = True
             if previous_result.output != docker_build_result_values['output']:  # to discuss
                 should_save_result = True
@@ -326,7 +323,7 @@ class Dockerfile(models.Model):
 
         if should_save_result:
             result = self.env['runbot.docker_build_result'].create(docker_build_result_values)
-            if not docker_build_identifier:
+            if not success:
                 message = f'Build failure, check results for more info ({result.summary})'
                 self.message_post(body=message)
                 _logger.error(message)
