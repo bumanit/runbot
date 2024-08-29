@@ -289,7 +289,6 @@ class Dockerfile(models.Model):
             })
 
     def _build(self, host=None):
-        start = time.time()
         docker_build_path = self.env['runbot.runbot']._path('docker', self.image_tag)
         os.makedirs(docker_build_path, exist_ok=True)
 
@@ -298,15 +297,14 @@ class Dockerfile(models.Model):
         with open(self.env['runbot.runbot']._path('docker', self.image_tag, 'Dockerfile'), 'w') as Dockerfile:
             Dockerfile.write(content)
 
-        docker_build_identifier, msg = docker_build(docker_build_path, self.image_tag)
-        duration = time.time() - start
+        result = docker_build(docker_build_path, self.image_tag)
+        docker_build_identifier = result['image']
+        duration = result['duration']
+        msg = result['msg']
         docker_build_result_values = {'dockerfile_id': self.id, 'output': msg, 'duration': duration, 'content': content, 'host_id': host and host.id}
-        duration = time.time() - start
         if docker_build_identifier:
             docker_build_result_values['result'] = 'success'
             docker_build_result_values['identifier'] = docker_build_identifier.id
-            if duration > 1:
-                _logger.info('Dockerfile %s finished build in %s', self.image_tag, duration)
         else:
             docker_build_result_values['result'] = 'error'
             self.to_build = False
