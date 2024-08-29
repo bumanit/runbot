@@ -110,19 +110,31 @@ def _docker_build(build_dir, image_tag):
     :param image_tag: name used to tag the resulting docker image
     :return: tuple(success, msg) where success is a boolean and msg is the error message or None
     """
+    result = {
+        'image': False,
+        'msg': '',
+    }
     docker_client = docker.from_env()
+    start = time.time()
     try:
         docker_image, result_stream = docker_client.images.build(path=build_dir, tag=image_tag, rm=True)
         result_stream = list(result_stream)
         msg = ''.join([r.get('stream', '') for r in result_stream])
-        return docker_image, msg
+        result['image'] = docker_image
+        result['msg'] = msg
     except docker.errors.APIError as e:
         _logger.error('Build of image %s failed', image_tag)
-        return (False, e.explanation)
+        result['msg'] = e.explanation
     except docker.errors.BuildError as e:
         _logger.error('Build of image %s failed', image_tag)
         msg = f"{''.join(l.get('stream') or '' for l in e.build_log)}\nERROR:{e.msg}"
-        return (False, msg)
+        result['msg'] = msg
+
+    duration = time.time() - start
+    if duration > 1:
+        _logger.info('Dockerfile %s finished build in %s', image_tag, duration)
+    result['duration'] = duration
+    return result
 
 def docker_push(image_tag):
     return _docker_push(image_tag)
