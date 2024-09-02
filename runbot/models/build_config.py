@@ -454,7 +454,7 @@ class ConfigStep(models.Model):
                 test_tags += self.test_tags.replace(' ', '').split(',')
             if self.enable_auto_tags and not build.params_id.config_data.get('disable_auto_tags', False):
                 if grep(config_path, "[/module][:class]"):
-                    auto_tags = self.env['runbot.build.error']._disabling_tags()
+                    auto_tags = self.env['runbot.build.error']._disabling_tags(build)
                     if auto_tags:
                         test_tags += auto_tags
 

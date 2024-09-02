@@ -29,6 +29,16 @@ class TestBuildError(RunbotCase):
         create_vals.update(vals)
         return self.Build.create(create_vals)
 
+    def create_params(self, vals):
+        create_vals = {
+            'version_id': self.version_13.id,
+            'project_id': self.project.id,
+            'config_id': self.default_config.id,
+            'create_batch_id': self.dev_batch.id,
+        }
+        create_vals.update(vals)
+        return self.BuildParameters.create(create_vals)
+
     def create_log(self, vals):
         log_vals = {
             'level': 'ERROR',
@@ -301,7 +311,7 @@ class TestBuildError(RunbotCase):
         self.assertEqual(error_a.build_count, 1)
         self.assertEqual(error_b.build_count, 2)
 
-    def test_build_error_test_tags(self):
+    def test_build_error_test_tags_no_version(self):
         build_a = self.create_test_build({'local_result': 'ko'})
         build_b = self.create_test_build({'local_result': 'ko'})
 
@@ -309,34 +319,74 @@ class TestBuildError(RunbotCase):
             'content': 'foo',
             'build_ids': [(6, 0, [build_a.id])],
             'random': True,
-            'active': True
+            'active': True,
+            'test_tags': 'foo,bar',
         })
 
         error_b = self.BuildError.create({
             'content': 'bar',
             'build_ids': [(6, 0, [build_b.id])],
             'random': True,
-            'active': False
+            'active': False,
+            'test_tags': 'blah',
         })
 
-
-        error_a.test_tags = 'foo,bar'
-        error_b.test_tags = 'blah'
-        self.assertIn('foo', self.BuildError._test_tags_list())
-        self.assertIn('bar', self.BuildError._test_tags_list())
         self.assertIn('-foo', self.BuildError._disabling_tags())
         self.assertIn('-bar', self.BuildError._disabling_tags())
 
         # test that test tags on fixed errors are not taken into account
-        self.assertNotIn('blah', self.BuildError._test_tags_list())
         self.assertNotIn('-blah', self.BuildError._disabling_tags())
 
         error_a.test_tags = False
         error_b.active = True
         error_b.parent_id = error_a.id
         self.assertEqual(error_b.test_tags, False)
-        self.assertEqual(self.BuildError._disabling_tags(), ['-blah',])
+        self.assertEqual(self.BuildError._disabling_tags(), ['-blah'])
 
+    def test_build_error_test_tags_min_max_version(self):
+        version_17 = self.Version.create({'name': '17.0'})
+        version_saas_171 = self.Version.create({'name': 'saas-17.1'})
+        version_master = self.Version.create({'name': 'master'})
+
+        build_v13 = self.create_test_build({'local_result': 'ko'})
+        build_v17 = self.create_test_build({'local_result': 'ko', 'params_id': self.create_params({'version_id': version_17.id}).id})
+        build_saas_171 = self.create_test_build({'local_result': 'ko', 'params_id': self.create_params({'version_id': version_saas_171.id}).id})
+        build_master = self.create_test_build({'local_result': 'ko', 'params_id': self.create_params({'version_id': version_master.id}).id})
+
+        self.BuildError.create(
+            [
+                {
+                    "content": "foobar",
+                    "build_ids": [(6, 0, [build_v13.id])],
+                    "test_tags": "every,where",
+                },
+                {
+                    "content": "blah",
+                    "build_ids": [(6, 0, [build_v17.id])],
+                    "test_tags": "tag_17_up_to_master",
+                    "tags_min_version_id": version_17.id,
+                },
+                {
+                    "content": "spam",
+                    "build_ids": [(6, 0, [build_v17.id])],
+                    "test_tags": "tag_up_to_17",
+                    "tags_max_version_id": version_17.id,
+                },
+                {
+                    "content": "eggs",
+                    "build_ids": [(6, 0, [build_saas_171.id])],
+                    "test_tags": "tag_only_17.1",
+                    "tags_min_version_id": version_saas_171.id,
+                    "tags_max_version_id": version_saas_171.id,
+                },
+            ]
+        )
+
+        self.assertEqual(sorted(['-every', '-where', '-tag_17_up_to_master', '-tag_up_to_17', '-tag_only_17.1']), sorted(self.BuildError._disabling_tags()), "Should return the whole list without parameters")
+        self.assertEqual(sorted(['-every', '-where', '-tag_up_to_17']), sorted(self.BuildError._disabling_tags(build_v13)))
+        self.assertEqual(sorted(['-every', '-where', '-tag_up_to_17', '-tag_17_up_to_master']), sorted(self.BuildError._disabling_tags(build_v17)))
+        self.assertEqual(sorted(['-every', '-where', '-tag_17_up_to_master', '-tag_only_17.1']), sorted(self.BuildError._disabling_tags(build_saas_171)))
+        self.assertEqual(sorted(['-every', '-where', '-tag_17_up_to_master']), sorted(self.BuildError._disabling_tags(build_master)))
 
     def test_build_error_team_wildcards(self):
         website_team = self.BuildErrorTeam.create({
