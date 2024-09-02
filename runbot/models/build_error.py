@@ -73,12 +73,20 @@ class BuildError(models.Model):
     last_seen_build_id = fields.Many2one('runbot.build', compute='_compute_last_seen_build_id', string='Last Seen build', store=True)
     last_seen_date = fields.Datetime(string='Last Seen Date', compute='_compute_seen_date', store=True)
     test_tags = fields.Char(string='Test tags', help="Comma separated list of test_tags to use to reproduce/remove this error", tracking=True)
+    tags_min_version_id = fields.Many2one('runbot.version', 'Tags Min version', help="Minimal version where the test tags will be applied.")
+    tags_max_version_id = fields.Many2one('runbot.version', 'Tags Max version', help="Maximal version where the test tags will be applied.")
 
     @api.constrains('test_tags')
     def _check_test_tags(self):
         for build_error in self:
             if build_error.test_tags and '-' in build_error.test_tags:
                 raise ValidationError('Build error test_tags should not be negated')
+
+    @api.onchange('test_tags')
+    def _onchange_test_tags(self):
+        for record in self:
+            record.tags_min_version_id = min(record.version_ids, key=lambda rec: rec.number)
+            record.tags_max_version_id = max(record.version_ids, key=lambda rec: rec.number)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -263,14 +271,22 @@ class BuildError(models.Model):
             return window_action
 
     @api.model
-    def _test_tags_list(self):
-        active_errors = self.search([('test_tags', '!=', False)])
-        test_tag_list = active_errors.mapped('test_tags')
+    def _test_tags_list(self, build_id=False):
+        version = build_id.params_id.version_id.number if build_id else False
+
+        def filter_tags(e):
+            if version:
+                min_v = e.tags_min_version_id.number or ''
+                max_v = e.tags_max_version_id.number or '~'
+                return min_v <= version and max_v >= version
+            return True
+
+        test_tag_list = self.search([('test_tags', '!=', False)]).filtered(filter_tags).mapped('test_tags')
         return [test_tag for error_tags in test_tag_list for test_tag in (error_tags).split(',')]
 
     @api.model
-    def _disabling_tags(self):
-        return ['-%s' % tag for tag in self._test_tags_list()]
+    def _disabling_tags(self, build_id=False):
+        return ['-%s' % tag for tag in self._test_tags_list(build_id)]
 
     def _search_version(self, operator, value):
         exclude_domain = []
