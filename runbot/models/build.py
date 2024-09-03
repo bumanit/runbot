@@ -15,7 +15,7 @@ from pathlib import Path
 from psycopg2 import sql
 from psycopg2.extensions import TransactionRollbackError
 
-from ..common import dt2time, now, grep, local_pgadmin_cursor, s2human, dest_reg, os, list_local_dbs, pseudo_markdown, RunbotException, findall, sanitize
+from ..common import dt2time, now, grep, local_pgadmin_cursor, s2human, dest_reg, os, list_local_dbs, pseudo_markdown, RunbotException, findall, sanitize, markdown_escape
 from ..container import docker_stop, docker_state, Command, docker_run
 from ..fields import JsonDictField
 
@@ -801,7 +801,7 @@ class BuildResult(models.Model):
                 return False
             new_step = step_ids[next_index]  # job to do, state is job_state (testing or running)
             if new_step.domain_filter and not self.filtered_domain(safe_eval(new_step.domain_filter)):
-                self._log('run', '**Skipping** step ~~%s~~ from config **%s**' % (new_step.name, self.params_id.config_id.name), log_type='markdown', level='SEPARATOR')
+                self._log('run', '**Skipping** step ~~%s~~ from config **%s**', (new_step.name, self.params_id.config_id.name), log_type='markdown', level='SEPARATOR')
                 next_index += 1
                 continue
             break
@@ -851,7 +851,7 @@ class BuildResult(models.Model):
             ro_volumes[f'/data/build/{dest}'] = source
         if 'image_tag' not in kwargs:
             kwargs.update({'image_tag': self.params_id.dockerfile_id.image_tag})
-        self._log('Preparing', 'Using Dockerfile Tag [%s](/runbot/dockerfile/tag/%s)' % (kwargs['image_tag'], kwargs['image_tag']), log_type='markdown')
+        self._log('Preparing', 'Using Dockerfile Tag [%s](/runbot/dockerfile/tag/%s)', kwargs['image_tag'], kwargs['image_tag'], log_type='markdown')
         containers_memory_limit = self.env['ir.config_parameter'].sudo().get_param('runbot.runbot_containers_memory', 0)
         if containers_memory_limit and 'memory' not in kwargs:
             kwargs['memory'] = int(float(containers_memory_limit) * 1024 ** 3)
@@ -972,13 +972,26 @@ class BuildResult(models.Model):
             local_cr.execute(sql.SQL("""CREATE DATABASE {} TEMPLATE %s LC_COLLATE 'C' ENCODING 'unicode'""").format(sql.Identifier(dbname)), (db_template,))
         self.env['runbot.database'].create({'name': dbname, 'build_id': self.id})
 
-    def _log(self, func, message, level='INFO', log_type='runbot', path='runbot'):
+    def _log(self, func, message, *args, level='INFO', log_type='runbot', path='runbot'):
+        def truncate(message, maxlenght=300000):
+            if len(message) > maxlenght:
+                return message[:maxlenght] + '[Truncate, message too long]'
+            return message
 
-        if len(message) > 300000:
-            message = message[:300000] + '[Truncate, message too long]'
+        if log_type == 'markdown':
+            args = tuple([markdown_escape(truncate(str(arg), maxlenght=200000)) for arg in args])
+
+        if args:
+            try:
+                message = message % args
+            except TypeError:
+                _logger.exception(f'Error while formating `{message}` with `{args}`')
+                message = ' ' .join([message] + args)
+
+        message = truncate(message)
 
         self.ensure_one()
-        _logger.info("Build %s %s %s", self.id, func, message)
+        #_logger.info("Build %s %s %s", self.id, func, message)
         return self.env['ir.logging'].create({
             'build_id': self.id,
             'level': level,

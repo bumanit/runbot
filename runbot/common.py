@@ -191,14 +191,17 @@ def pseudo_markdown(text):
     codes = []
     def code_remove(match):
         codes.append(match.group(1))
-        return f'<code>{len(codes)-1}</code>'
+        return f'<code>{len(codes) - 1}</code>'
+
+    escape = r'(?<!\\)(?:(?:\\\\)*)'
+
+    text = re.sub(rf'{escape}`(.+?{escape})`', code_remove, text, flags=re.DOTALL)
 
     patterns = {
-        r'`(.+?)`': code_remove,
         r'\*\*(.+?)\*\*': '<strong>\\g<1></strong>',
         r'~~(.+?)~~': '<del>\\g<1></del>',  # it's not official markdown but who cares
         r'__(.+?)__': '<ins>\\g<1></ins>',  # same here, maybe we should change the method name
-        r'\r?\n': '<br/>',
+        r'\r?\n': '<br/>\n',
     }
 
     for p, b in patterns.items():
@@ -209,14 +212,30 @@ def pseudo_markdown(text):
     text = re_icon.sub('<i class="fa fa-\\g<1>"></i>', text)
 
     # links
-    re_links = re.compile(r'\[(.+?)\]\((.+?)\)')
+    re_links = re.compile(rf'{escape}\[(.+?){escape}\]{escape}\(((http|/).+?{escape})\)')
     text = re_links.sub('<a href="\\g<2>">\\g<1></a>', text)
 
     def code_replace(match):
         return f'<code>{codes[int(match.group(1))]}</code>'
 
     text = Markup(re.sub(r'<code>(\d+)</code>', code_replace, text, flags=re.DOTALL))
+    text = markdown_unescape(text)
     return text
+
+patterns = ['\\', '[', ']', '(', ')', '_', '*', '#', '`']
+
+def markdown_escape(text):
+    text = str(text)
+    for pat in patterns:
+        text = text.replace(pat, rf'\{pat}')
+    return text
+
+
+def markdown_unescape(text):
+    for pat in patterns:
+        text = text.replace(rf'\{pat}', pat)
+    return text
+
 
 
 def make_github_session(token):

@@ -8,7 +8,7 @@ import re
 import shlex
 import time
 from unidiff import PatchSet
-from ..common import now, grep, time2str, rfind, s2human, os, RunbotException, ReProxy
+from ..common import now, grep, time2str, rfind, s2human, os, RunbotException, ReProxy, markdown_escape
 from ..container import docker_get_gateway_ip, Command
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
@@ -332,6 +332,7 @@ class ConfigStep(models.Model):
             'rfind': rfind,
             'json_loads': json.loads,
             'PatchSet': PatchSet,
+            'markdown_escape': markdown_escape,
         }
 
     def _run_python(self, build, force=False):
@@ -523,7 +524,7 @@ class ConfigStep(models.Model):
                     valid_targets |= (builds_references_by_version_id.get(next_version.id) or build.browse())
 
         for target in valid_targets:
-            build._log('', 'Checking upgrade to [%s](%s)' % (target.params_id.version_id.name, target.build_url), log_type='markdown')
+            build._log('', 'Checking upgrade to [%s](%s)', target.params_id.version_id.name, target.build_url, log_type='markdown')
             for upgrade_db in upgrade_complement_step.upgrade_dbs:
                 if not upgrade_db.min_target_version_id or upgrade_db.min_target_version_id.number <= target.params_id.version_id.number:
                     # note: here we don't consider the upgrade_db config here
@@ -660,7 +661,7 @@ class ConfigStep(models.Model):
                     #    for commit_link in target.params_id.commit_link_ids:
                     #        if commit_link.commit_id.repo_id not in repo_ids:
                     #            additionnal_commit_links |= commit_link
-                    #    build._log('', 'Adding sources from build [%s](%s)' % (target.id, target.build_url), log_type='markdown')
+                    #    build._log('', 'Adding sources from build [%s](%s)', target.id, target.build_url, log_type='markdown')
 
                     child = build._add_child({
                         'upgrade_to_build_id': target.id,
@@ -713,7 +714,7 @@ class ConfigStep(models.Model):
             for commit in commit_ids:
                 if commit.repo_id not in target_repo_ids:
                     target_commit_ids |= commit
-            build._log('', 'Adding sources from build [%s](%s)' % (target.id, target.build_url), log_type='markdown')
+            build._log('', 'Adding sources from build [%s](%s)', target.id, target.build_url, log_type='markdown')
         build = build.with_context(defined_commit_ids=target_commit_ids)
         exports = build._checkout()
 
@@ -772,7 +773,7 @@ class ConfigStep(models.Model):
             download_db_name = '%s-%s' % (dump_build.dest, download_db_suffix)
             zip_name = '%s.zip' % download_db_name
             dump_url = '%s%s' % (dump_build._http_log_url(), zip_name)
-            build._log('test-migration', 'Restoring dump [%s](%s) from build [%s](%s)' % (zip_name, dump_url, dump_build.id, dump_build.build_url), log_type='markdown')
+            build._log('test-migration', 'Restoring dump [%s](%s) from build [%s](%s)', zip_name, dump_url, dump_build.id, dump_build.build_url, log_type='markdown')
         restore_suffix = self.restore_rename_db_suffix or dump_db.db_suffix or suffix
         assert restore_suffix
         restore_db_name = '%s-%s' % (build.dest, restore_suffix)
@@ -892,14 +893,14 @@ class ConfigStep(models.Model):
         if self.coverage:
             xml_url = '%scoverage.xml' % build._http_log_url()
             html_url = 'http://%s/runbot/static/build/%s/coverage/index.html' % (build.host, build.dest)
-            message = 'Coverage report: [xml @icon-download](%s), [html @icon-eye](%s)' % (xml_url, html_url)
-            build._log('end_job', message, log_type='markdown')
+            message = 'Coverage report: [xml @icon-download](%s), [html @icon-eye](%s)'
+            build._log('end_job', message, xml_url, html_url, log_type='markdown')
 
         if self.flamegraph:
             dat_url = '%sflame_%s.%s' % (build._http_log_url(), self.name, 'log.gz')
             svg_url = '%sflame_%s.%s' % (build._http_log_url(), self.name, 'svg')
-            message = 'Flamegraph report: [data @icon-download](%s), [svg @icon-eye](%s)' % (dat_url, svg_url)
-            build._log('end_job', message, log_type='markdown')
+            message = 'Flamegraph report: [data @icon-download](%s), [svg @icon-eye](%s)'
+            build._log('end_job', message, dat_url, svg_url, log_type='markdown')
 
     def _modules_to_install(self, build):
         return set(build._get_modules_to_test(modules_patterns=self.install_modules))
@@ -1097,7 +1098,7 @@ class ConfigStep(models.Model):
         build._log('make_stats', 'Getting stats from log file')
         log_path = build._path('logs', '%s.txt' % self.name)
         if not os.path.exists(log_path):
-            build._log('make_stats', 'Log **%s.txt** file not found' % self.name, level='INFO', log_type='markdown')
+            build._log('make_stats', 'Log **%s.txt** file not found', self.name, level='INFO', log_type='markdown')
             return
         try:
             regex_ids = self.build_stat_regex_ids

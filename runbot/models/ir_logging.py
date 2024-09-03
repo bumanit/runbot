@@ -7,6 +7,7 @@ from collections import defaultdict
 from ..common import pseudo_markdown
 from odoo import models, fields, tools, api
 from odoo.exceptions import UserError
+from odoo.tools import html_escape
 
 _logger = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ class IrLogging(models.Model):
         """ Apply pseudo markdown parser for message.
         """
         self.ensure_one()
+        if self.type != 'markdown':
+            _logger.warning('Calling _markdown on a non markdown log')
+            return html_escape(self.message)
         return pseudo_markdown(self.message)
 
     def _compute_known_error(self):
