@@ -133,7 +133,7 @@ class Runbot(models.AbstractModel):
                                 build._log('******','Starting step Y', level='SEPARATOR')
                                 build._log('******','Some log', level='ERROR')
                                 build._log('******','Some log\n with multiple lines', level='ERROR')
-                                build._log('******','**Some** *markdown* [log](http://example.com)', log_type='markdown')
+                                build._log('******','**Some** *markdown* [log](%s)', 'http://example.com', log_type='markdown')
                                 build._log('******','Step x finished', level='SEPARATOR')
                             
                             build.local_state = 'done'

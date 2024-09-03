@@ -26,7 +26,7 @@ class Step(models.Model):
                 if email in checked:
                     continue
                 checked.add(email)
-                build._log('check_cla', "[Odoo CLA signature](https://www.odoo.com/sign-cla) check for %s (%s) " % (commit.author, email), log_type='markdown')
+                build._log('check_cla', "[Odoo CLA signature](https://www.odoo.com/sign-cla) check for %s (%s) ", commit.author, email, log_type='markdown')
                 mo = re.search('[^ <@]+@[^ @>]+', email or '')
                 if mo:
                     email = mo.group(0).lower()

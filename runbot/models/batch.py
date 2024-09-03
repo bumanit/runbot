@@ -4,7 +4,7 @@ import datetime
 import subprocess
 
 from odoo import models, fields, api
-from ..common import dt2time, s2human_long, pseudo_markdown
+from ..common import dt2time, s2human_long, pseudo_markdown, markdown_escape
 
 _logger = logging.getLogger(__name__)
 
@@ -462,6 +462,7 @@ class Batch(models.Model):
         self._log(message, *args, level='WARNING')
 
     def _log(self, message, *args, level='INFO'):
+        args = tuple([markdown_escape(arg) for arg in args])
         message = message % args if args else message
         self.env['runbot.batch.log'].create({
             'batch_id': self.id,

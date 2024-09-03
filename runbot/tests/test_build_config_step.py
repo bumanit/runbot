@@ -6,6 +6,7 @@ from odoo.tools import mute_logger
 from odoo.exceptions import UserError
 from odoo.addons.runbot.common import RunbotException
 from .common import RunbotCase
+from ..common import markdown_unescape
 
 class TestBuildConfigStepCommon(RunbotCase):
     def setUp(self):
@@ -119,24 +120,24 @@ class TestCodeowner(TestBuildConfigStepCommon):
         self.config_step._run_codeowner(self.parent_build)
         messages = self.parent_build.log_ids.mapped('message')
         self.assertEqual(messages[1], 'Checking 2 codeowner regexed on 3 files')
-        self.assertEqual(messages[2], 'Adding team_js to reviewers for file [server/file.js](https://False/blob/dfdfcfcf/file.js)')
-        self.assertEqual(messages[3], 'Adding team_py to reviewers for file [server/file.py](https://False/blob/dfdfcfcf/file.py)')
-        self.assertEqual(messages[4], 'Adding codeowner-team to reviewers for file [server/file.xml](https://False/blob/dfdfcfcf/file.xml)')
-        self.assertEqual(messages[5], 'Requesting review for pull request [base/server:1234](https://example.com/base/server/pull/1234): codeowner-team, team_js, team_py')
+        self.assertEqual(markdown_unescape(messages[2]), 'Adding team_js to reviewers for file [server/file.js](https://False/blob/dfdfcfcf/file.js)')
+        self.assertEqual(markdown_unescape(messages[3]), 'Adding team_py to reviewers for file [server/file.py](https://False/blob/dfdfcfcf/file.py)')
+        self.assertEqual(markdown_unescape(messages[4]), 'Adding codeowner-team to reviewers for file [server/file.xml](https://False/blob/dfdfcfcf/file.xml)')
+        self.assertEqual(markdown_unescape(messages[5]), 'Requesting review for pull request [base/server:1234](https://example.com/base/server/pull/1234): codeowner-team, team_js, team_py')
         self.assertEqual(self.dev_pr.reviewers, 'codeowner-team,team_js,team_py')
 
     def test_codeowner_regex_some_already_on(self):
         self.diff = 'file.js\nfile.py\nfile.xml'
         self.dev_pr.reviewers = 'codeowner-team,team_js'
         self.config_step._run_codeowner(self.parent_build)
-        messages = self.parent_build.log_ids.mapped('message')        
-        self.assertEqual(messages[5], 'Requesting review for pull request [base/server:1234](https://example.com/base/server/pull/1234): team_py')
+        messages = self.parent_build.log_ids.mapped('message')
+        self.assertEqual(markdown_unescape(messages[5]), 'Requesting review for pull request [base/server:1234](https://example.com/base/server/pull/1234): team_py')
 
     def test_codeowner_regex_all_already_on(self):
         self.diff = 'file.js\nfile.py\nfile.xml'
         self.dev_pr.reviewers = 'codeowner-team,team_js,team_py'
         self.config_step._run_codeowner(self.parent_build)
-        messages = self.parent_build.log_ids.mapped('message')        
+        messages = self.parent_build.log_ids.mapped('message')
         self.assertEqual(messages[5], 'All reviewers are already on pull request [base/server:1234](https://example.com/base/server/pull/1234)')
 
     def test_codeowner_author_in_team(self):
@@ -147,8 +148,8 @@ class TestCodeowner(TestBuildConfigStepCommon):
         self.dev_pr.pr_author = 'some_member'
         self.config_step._run_codeowner(self.parent_build)
         messages = self.parent_build.log_ids.mapped('message')
-        self.assertEqual(messages[5], "Skipping teams ['team_py'] since author is part of the team members")
-        self.assertEqual(messages[6], 'Requesting review for pull request [base/server:1234](https://example.com/base/server/pull/1234): codeowner-team, team_js')
+        self.assertEqual(markdown_unescape(messages[5]), "Skipping teams ['team_py'] since author is part of the team members")
+        self.assertEqual(markdown_unescape(messages[6]), 'Requesting review for pull request [base/server:1234](https://example.com/base/server/pull/1234): codeowner-team, team_js')
         self.assertEqual(self.dev_pr.reviewers, 'codeowner-team,team_js,team_py')
 
     def test_codeowner_ownership_base(self):
@@ -160,7 +161,7 @@ class TestCodeowner(TestBuildConfigStepCommon):
         self.config_step._run_codeowner(self.parent_build)
         messages = self.parent_build.log_ids.mapped('message')
         self.assertEqual(
-            messages[2], 
+            markdown_unescape(messages[2]), 
             'Adding team_01, team_py to reviewers for file [server/core/addons/module1/some/file.py](https://False/blob/dfdfcfcf/core/addons/module1/some/file.py)'
         )
 
@@ -173,7 +174,7 @@ class TestCodeowner(TestBuildConfigStepCommon):
         self.config_step._run_codeowner(self.parent_build)
         messages = self.parent_build.log_ids.mapped('message')
         self.assertEqual(
-            messages[2], 
+            markdown_unescape(messages[2]), 
             'Adding team_py to reviewers for file [server/core/addons/module1/some/file.py](https://False/blob/dfdfcfcf/core/addons/module1/some/file.py)'
         )
 
@@ -189,7 +190,7 @@ class TestCodeowner(TestBuildConfigStepCommon):
             'core/addons/module4/some/file.txt',
         ])
         self.config_step._run_codeowner(self.parent_build)
-        messages = self.parent_build.log_ids.mapped('message')
+        messages = [markdown_unescape(message) for message in self.parent_build.log_ids.mapped('message')]
         self.assertEqual(messages, [
             'PR [base/server:1234](https://example.com/base/server/pull/1234) found for repo **server**',
             'Checking 2 codeowner regexed on 4 files',
@@ -199,6 +200,21 @@ class TestCodeowner(TestBuildConfigStepCommon):
             'Adding codeowner-team to reviewers for file [server/core/addons/module4/some/file.txt](https://False/blob/dfdfcfcf/core/addons/module4/some/file.txt)',
             'Requesting review for pull request [base/server:1234](https://example.com/base/server/pull/1234): codeowner-team, team_01, team_02, team_js, team_py'
         ])
+
+    def test_codeowner___init__log(self):
+        module1 = self.env['runbot.module'].create({'name': "module1"})
+        self.env['runbot.module.ownership'].create({'team_id': self.team1.id, 'module_id': module1.id})
+        self.diff = '\n'.join([
+            'core/addons/module1/some/__init__.py',
+        ])
+        self.config_step._run_codeowner(self.parent_build)
+        logs = self.parent_build.log_ids
+        print
+        self.assertEqual(
+            logs[2]._markdown(),
+            'Adding team_01, team_py to reviewers for file <a href="https://False/blob/dfdfcfcf/core/addons/module1/some/__init__.py">server/core/addons/module1/some/__init__.py</a>',
+            '__init__.py should not be replaced by <ins>init</ins>.py'
+        )
 
 class TestBuildConfigStepRestore(TestBuildConfigStepCommon):
 

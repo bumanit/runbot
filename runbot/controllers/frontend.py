@@ -573,7 +573,7 @@ class Runbot(Controller):
         builds = request.env['runbot.build'].with_context(active_test=False)
         if center_build_id:
             builds = builds.search(
-                expression.AND([builds_domain, [('id', '>=', center_build_id)]]), 
+                expression.AND([builds_domain, [('id', '>=', center_build_id)]]),
                 order='id', limit=limit/2)
             builds_domain = expression.AND([builds_domain, [('id', '<=', center_build_id)]])
             limit -= len(builds)

@@ -1,5 +1,6 @@
 import re
 from odoo import models, fields
+from ..common import markdown_escape
 
 
 class ConfigStep(models.Model):
@@ -18,7 +19,7 @@ class ConfigStep(models.Model):
                     build._log('', 'More than one open pr in this bundle for %s: %s' % (commit.repo_id.name, [pr.name for pr in repo_pr]), level='ERROR')
                     build.local_result = 'ko'
                     return {}
-                build._log('', 'PR [%s](%s) found for repo **%s**' % (repo_pr.dname, repo_pr.branch_url, commit.repo_id.name), log_type='markdown')
+                build._log('', 'PR [%s](%s) found for repo **%s**', repo_pr.dname, repo_pr.branch_url, commit.repo_id.name, log_type='markdown')
                 pr_by_commit[commit_link] = repo_pr
             else:
                 build._log('', 'No pr for repo %s, skipping' % commit.repo_id.name)
@@ -124,10 +125,10 @@ class ConfigStep(models.Model):
             for file, file_reviewers in reviewer_per_file.items():
                 href = 'https://%s/blob/%s/%s' % (commit_link.branch_id.remote_id.base_url, commit_link.commit_id.name, file.split('/', 1)[-1])
                 if file_reviewers:
-                    build._log('', 'Adding %s to reviewers for file [%s](%s)' % (', '.join(sorted(file_reviewers)), file, href), log_type='markdown')
+                    build._log('', 'Adding %s to reviewers for file [%s](%s)', ', '.join(sorted(file_reviewers)), file, href, log_type='markdown')
                     reviewers |= file_reviewers
                 else:
-                    build._log('', 'No reviewer for file [%s](%s)' % (file, href), log_type='markdown')
+                    build._log('', 'No reviewer for file [%s](%s)', file, href, log_type='markdown')
 
             if reviewers:
                 pr = pr_by_commit[commit_link]
@@ -137,19 +138,19 @@ class ConfigStep(models.Model):
                     author_skipped_teams = set(author_skippable_teams.mapped('github_team'))
                     if author_skipped_teams:
                         new_reviewers = new_reviewers - author_skipped_teams
-                        build._log('', 'Skipping teams %s since author is part of the team members' % (sorted(author_skipped_teams),), log_type='markdown')
+                        build._log('', 'Skipping teams %s since author is part of the team members', sorted(author_skipped_teams), log_type='markdown')
 
                     fw_skippable_teams = skippable_teams.filtered(lambda team: team.skip_fw_pr and team.github_team in new_reviewers and pr.pr_author == fw_bot)
                     fw_skipped_teams = set(fw_skippable_teams.mapped('github_team'))
                     if fw_skipped_teams:
                         new_reviewers = new_reviewers - fw_skipped_teams
-                        build._log('', 'Skipping teams %s (ignore forwardport)' % (sorted(fw_skipped_teams),), log_type='markdown')
+                        build._log('', 'Skipping teams %s (ignore forwardport)', sorted(fw_skipped_teams), log_type='markdown')
 
                     new_reviewers = sorted(new_reviewers)
 
-                    build._log('', 'Requesting review for pull request [%s](%s): %s' % (pr.dname, pr.branch_url, ', '.join(new_reviewers)), log_type='markdown')
+                    build._log('', 'Requesting review for pull request [%s](%s): %s', pr.dname, pr.branch_url, ', '.join(new_reviewers), log_type='markdown')
                     response = pr.remote_id._github('/repos/:owner/:repo/pulls/%s/requested_reviewers' % pr.name, {"team_reviewers": list(new_reviewers)}, ignore_errors=False)
                     pr._update_branch_infos(response)
                     pr['reviewers'] = ','.join(sorted(reviewers))
                 else:
-                    build._log('', 'All reviewers are already on pull request [%s](%s)' % (pr.dname, pr.branch_url,), log_type='markdown')
+                    build._log('', 'All reviewers are already on pull request [%s](%s)', pr.dname, pr.branch_url, log_type='markdown')
