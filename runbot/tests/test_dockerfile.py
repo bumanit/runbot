@@ -2,6 +2,7 @@
 import getpass
 import logging
 import os
+import re
 
 from odoo import Command
 from unittest.mock import patch, mock_open
@@ -28,6 +29,7 @@ class TestDockerfile(RunbotCase, HttpCase):
             ):
             docker_render = self.env.ref('runbot.docker_default').dockerfile.replace('\n\n', '\n')
             docker_render = '\n'.join(line for line in docker_render.split('\n') if line and line[0] != '#')
+            docker_render = re.sub(r'google-chrome-stable_\d{3}\.\d\.\d{1,4}\.\d{1,4}-\d', 'google-chrome-stable_xxx.x.xxxx.xx-x', docker_render)
 
         self.assertEqual(
 r"""FROM ubuntu:noble
@@ -58,7 +60,7 @@ RUN curl -sSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /etc/apt/tru
         | DEBIAN_FRONTEND=noninteractive xargs apt-get install -y -qq --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-RUN curl -sSL https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_123.0.6312.58-1_amd64.deb -o /tmp/chrome.deb \
+RUN curl -sSL https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_xxx.x.xxxx.xx-x_amd64.deb -o /tmp/chrome.deb \
     && apt-get update \
     && apt-get -y install --no-install-recommends /tmp/chrome.deb \
     && rm /tmp/chrome.deb
