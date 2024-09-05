@@ -72,6 +72,14 @@ class Approve:
             return f"r={ids}"
         return 'review+'
 
+    def __contains__(self, item):
+        if self.ids is None:
+            return True
+        return item in self.ids
+
+    def fmt(self):
+        return ", ".join(f"#{n:d}" for n in (self.ids or ()))
+
     @classmethod
     def help(cls, _: bool) -> Iterator[Tuple[str, str]]:
         yield "r(eview)+", "approves the PR, if it's a forwardport also approves all non-detached parents"
@@ -184,7 +192,7 @@ class FW(enum.Enum):
     DEFAULT = enum.auto()
     NO = enum.auto()
     SKIPCI = enum.auto()
-    SKIPMERGE = enum.auto()
+    # SKIPMERGE = enum.auto()
 
     def __str__(self) -> str:
         return f'fw={self.name.lower()}'

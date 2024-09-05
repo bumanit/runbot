@@ -136,6 +136,64 @@ def test_failed_staging(env, config, make_repo):
     assert pr3_id.state == 'ready'
     assert pr3_id.staging_id
 
+def test_fw_retry(env, config, make_repo, users):
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
+    other_token = config['role_other']['token']
+    fork = prod.fork(token=other_token)
+    with prod, fork:
+        fork.make_commits('a', Commit('c', tree={'a': '0'}), ref='heads/abranch')
+        pr1 = prod.make_pr(
+            title="whatever",
+            target='a',
+            head=f'{fork.owner}:abranch',
+            token=other_token,
+        )
+        prod.post_status(pr1.head, 'success')
+        pr1.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    other_partner = env['res.partner'].search([('github_login', '=', users['other'])])
+    assert len(other_partner) == 1
+    other_partner.email = "foo@example.com"
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    _pr1_id, pr2_id = env['runbot_merge.pull_requests'].search([], order='number')
+    pr2 = prod.get_pr(pr2_id.number)
+    with prod:
+        prod.post_status(pr2_id.head, 'success')
+        pr2.post_comment('hansen r+', other_token)
+    env.run_crons()
+    assert not pr2_id.blocked
+
+    with prod:
+        prod.post_status('staging.b', 'failure')
+    env.run_crons()
+
+    assert pr2_id.error
+    with prod:
+        pr2.post_comment('hansen r+', other_token)
+    env.run_crons()
+    assert pr2_id.state == 'error'
+    with prod:
+        pr2.post_comment('hansen retry', other_token)
+    env.run_crons()
+    assert pr2_id.state == 'ready'
+
+    assert pr2.comments == [
+        seen(env, pr2, users),
+        (users['user'], "This PR targets b and is part of the forward-port chain. Further PRs will be created up to c.\n\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port\n"),
+        (users['other'], 'hansen r+'),
+        (users['user'], "@{other} @{reviewer} staging failed: default".format_map(users)),
+
+        (users['other'], 'hansen r+'),
+        (users['user'], "This PR is already reviewed, it's in error, you might want to `retry` it instead (if you have already confirmed the error is not legitimate)."),
+
+        (users['other'], 'hansen retry'),
+    ]
+
 class TestNotAllBranches:
     """ Check that forward-ports don't behave completely insanely when not all
     branches are supported on all repositories.

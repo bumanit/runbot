@@ -679,14 +679,14 @@ class PullRequests(models.Model):
             })
 
         is_admin, is_reviewer, is_author = self._pr_acl(author)
-        _source_admin, source_reviewer, source_author = self.source_id._pr_acl(author)
+        source_author = self.source_id._pr_acl(author).is_author
         # nota: 15.0 `has_group` completely doesn't work if the recordset is empty
         super_admin = is_admin and author.user_ids and author.user_ids.has_group('runbot_merge.group_admin')
 
         help_list: list[type(commands.Command)] = list(filter(None, [
             commands.Help,
 
-            (self.source_id and (source_author or source_reviewer) or is_reviewer) and not self.reviewed_by and commands.Approve,
+            (is_reviewer or (self.source_id and source_author)) and not self.reviewed_by and commands.Approve,
             (is_author or source_author) and self.reviewed_by and commands.Reject,
             (is_author or source_author) and self.error and commands.Retry,
 
@@ -768,55 +768,21 @@ For your own safety I've ignored *everything in your entire comment*.
             match command:
                 case commands.Approve() if self.draft:
                     msg = "draft PRs can not be approved."
-                case commands.Approve() if self.source_id:
-                    # rules are a touch different for forwardport PRs:
-                    valid = lambda _: True if command.ids is None else lambda n: n in command.ids
-                    _, source_reviewer, source_author = self.source_id._pr_acl(author)
-
-                    ancestors = list(self._iter_ancestors())
-                    # - reviewers on the original can approve any forward port
-                    if source_reviewer:
-                        approveable = ancestors
-                    elif source_author:
-                        # give full review rights on all forwardports (attached
-                        # or not) to original author
-                        approveable = ancestors
+                case commands.Approve() if self.source_id and (source_author or is_reviewer):
+                    if selected := [p for p in self._iter_ancestors() if p.number in command]:
+                        for pr in selected:
+                            # ignore already reviewed PRs, unless it's the one
+                            # being r+'d, this means ancestors in error will not
+                            # be warned about
+                            if pr == self or not pr.reviewed_by:
+                                pr._approve(author, login)
                     else:
-                        # between the first merged ancestor and self
-                        mergeors = list(itertools.dropwhile(
-                            lambda p: p.state != 'merged',
-                            reversed(ancestors),
-                        ))
-                        # between the first ancestor the current user can review and self
-                        reviewors = list(itertools.dropwhile(
-                            lambda p: not p._pr_acl(author).is_reviewer,
-                            reversed(ancestors),
-                        ))
-
-                        # source author can approve any descendant of a merged
-                        # forward port (or source), people with review rights
-                        # to a forward port have review rights to its
-                        # descendants, if both apply use the most favorable
-                        # (largest number of PRs)
-                        if source_author and len(mergeors) > len(reviewors):
-                            approveable = mergeors
-                        else:
-                            approveable = reviewors
-
-                    if approveable:
-                        for pr in approveable:
-                            if not (pr.state in RPLUS and valid(pr.number)):
-                                continue
-                            msg = pr._approve(author, login)
-                            if msg:
-                                break
-                    else:
-                        msg = f"you can't {command} you silly little bean."
+                        msg = f"tried to approve PRs {command.fmt()} but no such PR is an ancestors of {self.number}"
                 case commands.Approve() if is_reviewer:
-                    if command.ids is not None and command.ids != [self.number]:
-                        msg = f"tried to approve PRs {command.ids} but the current PR is {self.number}"
-                    else:
+                    if command.ids is None or command.ids == [self.number]:
                         msg = self._approve(author, login)
+                    else:
+                        msg = f"tried to approve PRs {command.fmt()} but the current PR is {self.number}"
                 case commands.Reject() if is_author or source_author:
                     if self.batch_id.skipchecks or self.reviewed_by:
                         if self.error:
@@ -916,10 +882,10 @@ For your own safety I've ignored *everything in your entire comment*.
                             message = "Disabled forward-porting."
                         case commands.FW.DEFAULT if is_author or source_author:
                             message = "Waiting for CI to create followup forward-ports."
-                        case commands.FW.SKIPCI if is_reviewer or source_reviewer:
+                        case commands.FW.SKIPCI if is_reviewer:
                             message = "Not waiting for CI to create followup forward-ports."
-                        case commands.FW.SKIPMERGE if is_reviewer or source_reviewer:
-                            message = "Not waiting for merge to create followup forward-ports."
+                        # case commands.FW.SKIPMERGE if is_reviewer:
+                        #     message = "Not waiting for merge to create followup forward-ports."
                         case _:
                             msg = f"you don't have the right to {command}."
 
@@ -1142,7 +1108,7 @@ For your own safety I've ignored *everything in your entire comment*.
             kw['bodies'] = {p.id: html_escape(message) for p in self}
         return super()._message_log_batch(**kw)
 
-    def _pr_acl(self, user):
+    def _pr_acl(self, user) -> ACL:
         if not self:
             return ACL(False, False, False)
 
@@ -1151,10 +1117,18 @@ For your own safety I've ignored *everything in your entire comment*.
             ('repository_id', '=', self.repository.id),
             ('review', '=', True) if self.author != user else ('self_review', '=', True),
         ]) == 1
-        is_reviewer = is_admin or self in user.delegate_reviewer
-        # TODO: should delegate reviewers be able to retry PRs?
-        is_author = is_reviewer or self.author == user
-        return ACL(is_admin, is_reviewer, is_author)
+        if is_admin:
+            return ACL(True, True, True)
+
+        # delegate on source = delegate on PR
+        if self.source_id and self.source_id in user.delegate_reviewer:
+            return ACL(False, True, True)
+        # delegate on any ancestors ~ delegate on PR (maybe should be any descendant of source?)
+        if any(p in user.delegate_reviewer for p in self._iter_ancestors()):
+            return ACL(False, True, True)
+
+        # user is probably always False on a forward port
+        return ACL(False, False, self.author == user)
 
     def _validate(self, statuses):
         # could have two PRs (e.g. one open and one closed) at least

@@ -692,6 +692,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 '''.format_map(users)),
         (users['other'], 'hansen r+')
     ]
+    assert pr2_id.reviewed_by
 
 
 def test_redundant_approval(env, config, make_repo, users):
