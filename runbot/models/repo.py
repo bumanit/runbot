@@ -710,7 +710,7 @@ class Repo(models.Model):
         while not success and try_count < 5:
             time.sleep(delay)
             try:
-                self._git(['fetch', '-p', '--all', ])
+                self._git(['fetch', '-p', '--all', '-j2'])  # j2 to use two job and fetch multiple origin at the same time
                 success = True
             except subprocess.CalledProcessError as e:
                 try_count += 1
