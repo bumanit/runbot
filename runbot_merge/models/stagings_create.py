@@ -195,11 +195,15 @@ def ready_batches(for_branch: Branch) -> Tuple[bool, Batch]:
     # staged through priority *and* through split.
     split_ids = for_branch.split_ids.batch_ids.ids
     env.cr.execute("""
-        SELECT max(priority)
-        FROM runbot_merge_batch
-        WHERE blocked IS NULL AND target = %s AND NOT id = any(%s)
+        SELECT exists (
+            SELECT FROM runbot_merge_batch
+            WHERE priority = 'alone'
+              AND blocked IS NULL
+              AND target = %s
+              AND NOT id = any(%s)
+        )
     """, [for_branch.id, split_ids])
-    alone = env.cr.fetchone()[0] == 'alone'
+    [alone] = env.cr.fetchone()
 
     return (
         alone,
@@ -208,7 +212,7 @@ def ready_batches(for_branch: Branch) -> Tuple[bool, Batch]:
             ('blocked', '=', False),
             ('priority', '=', 'alone') if alone else (1, '=', 1),
             ('id', 'not in', split_ids),
-        ], order="priority DESC, id ASC"),
+        ], order="priority DESC, write_date ASC, id ASC"),
     )
 
 
