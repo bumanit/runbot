@@ -2049,6 +2049,7 @@ class Stagings(models.Model):
                 ._trigger(fields.Datetime.to_datetime(timeout))
 
         if vals.get('active') is False:
+            vals['staging_end'] = fields.Datetime.now()
             self.env.ref("runbot_merge.staging_cron")._trigger()
 
         return super().write(vals)
@@ -2141,7 +2142,6 @@ class Stagings(models.Model):
             s.state = st
             if s.state != 'pending':
                 self.env.ref("runbot_merge.merge_cron")._trigger()
-                s.staging_end = fields.Datetime.now()
             if update_timeout_limit:
                 s.timeout_limit = datetime.datetime.now() + datetime.timedelta(minutes=s.target.project_id.ci_timeout)
                 self.env.ref("runbot_merge.merge_cron")._trigger(s.timeout_limit)
