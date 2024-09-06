@@ -65,7 +65,7 @@
                                                     <span t-esc="user_id.name[:23] + '...' if user_id.name and len(user_id.name) &gt; 25 else user_id.name"/>
                                                 </b>
                                             </a>
-                                            <div class="dropdown-menu js_usermenu" role="menu">
+                                            <div class="dropdown-menu dropdown-menu-end js_usermenu" role="menu">
                                                 <a class="dropdown-item" id="o_logout" role="menuitem" t-attf-href="/web/session/logout?redirect=/">Logout</a>
                                                 <a class="dropdown-item" role="menuitem" t-attf-href="/web">Web</a>
                                                 <div t-if="user_id.runbot_team_ids" class="dropdown-divider"/>
@@ -380,11 +380,17 @@
                     <i t-attf-class="fa fa-bar-chart"/>
                     <span class="caret"/>
             </button>
-            <div class="dropdown-menu dropdown-menu-end" role="menu">
-                <t t-foreach="project.trigger_ids" t-as="trigger">
-                    <a class="dropdown-item" t-if="trigger.has_stats" t-attf-href="/runbot/stats/{{bundle.id}}/{{trigger.id}}">
-                        <t t-esc="trigger.name" />
-                    </a>
+            <div class="dropdown-menu dropdown-menu-start" role="menu">
+                <t t-foreach="project.trigger_ids.sorted(lambda t: (t.category_id.id, t.sequence, t.id))" t-as="trigger">
+                    <t t-if="trigger.has_stats and not trigger.manual" >
+                        <t t-if="current_category != trigger.category_id">
+                            <span class="dropdown-item"><b><t t-esc="trigger.category_id.name"/></b></span>
+                            <t t-set="current_category" t-value="trigger.category_id"/>
+                        </t>
+                        <a class="dropdown-item" t-attf-href="/runbot/stats/{{bundle.id}}/{{trigger.id}}">
+                            <t t-esc="trigger.name" />
+                        </a>
+                    </t>
                 </t>
             </div>
         </template>
