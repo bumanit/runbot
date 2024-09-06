@@ -629,6 +629,14 @@ def test_disapproval(env, config, make_repo, users):
                         "sibling forward ports may have to be unapproved "
                         "individually."),
     ]
+    with prod:
+        pr2.post_comment('hansen r-', token=config['role_other']['token'])
+    env.run_crons(None)
+    assert pr2_id.state == 'validated'
+    assert pr2.comments[2:] == [
+        (users['other'], "hansen r+"),
+        (users['other'], "hansen r-"),
+    ], "shouldn't have a warning on r- because it's the only approved PR of the chain"
 
 def test_delegate_fw(env, config, make_repo, users):
     """If a user is delegated *on a forward port* they should be able to approve
