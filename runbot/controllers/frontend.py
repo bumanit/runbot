@@ -553,7 +553,7 @@ class Runbot(Controller):
 
 
     @route(['/runbot/stats/'], type='json', auth="public", website=False, sitemap=False)
-    def stats_json(self, bundle_id=False, trigger_id=False, key_category='', center_build_id=False, limit=100, search=None, **post):
+    def stats_json(self, bundle_id=False, trigger_id=False, key_category='', center_build_id=False, ok_only=False, limit=100, search=None, **post):
         """ Json stats """
         trigger_id = trigger_id and int(trigger_id)
         bundle_id = bundle_id and int(bundle_id)
@@ -570,6 +570,8 @@ class Runbot(Controller):
             ('slot_ids.batch_id.bundle_id', '=', bundle_id),
             ('params_id.trigger_id', '=', trigger.id),
         ]
+        if ok_only:
+            builds_domain += ('global_result', '=', 'ok')
         builds = request.env['runbot.build'].with_context(active_test=False)
         if center_build_id:
             builds = builds.search(
@@ -585,7 +587,7 @@ class Runbot(Controller):
         builds = builds.search([('id', 'child_of', builds.ids)])
 
         parents = {b.id: b.top_parent.id for b in builds.with_context(prefetch_fields=False)}
-        request.env.cr.execute("SELECT build_id, values FROM runbot_build_stat WHERE build_id IN %s AND category = %s", [tuple(builds.ids), key_category]) # read manually is way faster than using orm
+        request.env.cr.execute("SELECT build_id, values FROM runbot_build_stat WHERE build_id IN %s AND category = %s", [tuple(builds.ids), key_category])  # read manually is way faster than using orm
         res = {}
         for (build_id, values) in request.env.cr.fetchall():
             if values:
@@ -596,8 +598,21 @@ class Runbot(Controller):
     @route(['/runbot/stats/<model("runbot.bundle"):bundle>/<model("runbot.trigger"):trigger>'], type='http', auth="public", website=True, sitemap=False)
     def modules_stats(self, bundle, trigger, search=None, **post):
         """Modules statistics"""
+        categories = set()
 
-        categories = request.env['runbot.build.stat.regex'].search([]).mapped('name')
+        def list_config_categories(config):
+            nonlocal categories
+            for config_step in config.step_ids:
+                regex_ids = config_step.build_stat_regex_ids
+                if not regex_ids:
+                    regex_ids = regex_ids.search([('generic', '=', True)])
+                categories |= set(regex_ids.mapped('name'))
+                for config in config_step.create_config_ids:
+                    list_config_categories(config)
+
+        list_config_categories(trigger.config_id)
+
+        categories = sorted(categories)
 
         context = {
             'stats_categories': categories,

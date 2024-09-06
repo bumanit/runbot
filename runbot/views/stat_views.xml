@@ -12,6 +12,7 @@
                 <field name="generic"/>
                 <field name="description"/>
                 <field name="sequence"/>
+                <field name="config_step_ids"/>
               </group>
             </sheet>
           </form>

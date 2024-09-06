@@ -251,4 +251,3 @@ class ReProxy():
 
     VERBOSE = re.VERBOSE
     MULTILINE = re.MULTILINE
-
