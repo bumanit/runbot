@@ -362,7 +362,8 @@ stderr:
 {err}
 """
 
-            target_head = source.stdout().rev_parse(target_branch.name).stdout.decode().strip()
+            target_head = source.stdout().rev_parse(f"refs/heads/{target_branch.name}")\
+                .stdout.decode().strip()
             commit = conf.commit_tree(
                 tree=tree.stdout.decode().splitlines(keepends=False)[0],
                 parents=[target_head],
@@ -386,7 +387,7 @@ stderr:
         logger = _logger.getChild(str(self.id)).getChild('cherrypick')
 
         # target's head
-        head = repo.stdout().rev_parse(branch).stdout.decode().strip()
+        head = repo.stdout().rev_parse(f"refs/heads/{branch}").stdout.decode().strip()
 
         commits = self.commits()
         logger.info(

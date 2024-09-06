@@ -244,7 +244,8 @@ def staging_setup(
             # be hooked only to "proper" remote-tracking branches
             # (in `refs/remotes`), it doesn't seem to work here
             f'+refs/heads/{target.name}:refs/heads/{target.name}',
-            *(pr.head for pr in by_repo.get(repo, []))
+            *(pr.head for pr in by_repo.get(repo, [])),
+            no_tags=True,
         )
         original_heads[repo] = head
         staging_state[repo] = StagingSlice(gh=gh, head=head, repo=source.stdout().with_config(text=True, check=False))
