@@ -802,7 +802,7 @@ class BuildResult(models.Model):
                 return False
             new_step = step_ids[next_index]  # job to do, state is job_state (testing or running)
             if new_step.domain_filter and not self.filtered_domain(safe_eval(new_step.domain_filter)):
-                self._log('run', '**Skipping** step ~~%s~~ from config **%s**', (new_step.name, self.params_id.config_id.name), log_type='markdown', level='SEPARATOR')
+                self._log('run', '**Skipping** step ~~%s~~ from config **%s**', new_step.name, self.params_id.config_id.name, log_type='markdown', level='SEPARATOR')
                 next_index += 1
                 continue
             break
