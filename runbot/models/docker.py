@@ -297,7 +297,7 @@ class Dockerfile(models.Model):
         result = docker_build(docker_build_path, self.image_tag)
         duration = result['duration']
         msg = result['msg']
-        success = image_id = result['image_id']
+        success = image_id = result.get('image_id')
         docker_build_result_values = {'dockerfile_id': self.id, 'output': msg, 'duration': duration, 'content': content, 'host_id': host and host.id}
         if success:
             docker_build_result_values['result'] = 'success'
