@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 import builtins
-import contextlib
 import logging
 import re
-import uuid
 from contextlib import ExitStack
 from datetime import datetime, timedelta
 
@@ -11,7 +9,7 @@ import requests
 import sentry_sdk
 from dateutil import relativedelta
 
-from odoo import fields, models
+from odoo import api, fields, models
 from odoo.addons.runbot_merge import git
 from odoo.addons.runbot_merge.github import GH
 
@@ -77,6 +75,7 @@ class ForwardPortTasks(models.Model, Queue):
     retry_after = fields.Datetime(required=True, default='1900-01-01 01:01:01')
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
+    @api.model_create_multi
     def create(self, vals_list):
         self.env.ref('forwardport.port_forward')._trigger()
         return super().create(vals_list)
@@ -270,6 +269,7 @@ class UpdateQueue(models.Model, Queue):
     original_root = fields.Many2one('runbot_merge.pull_requests')
     new_root = fields.Many2one('runbot_merge.pull_requests')
 
+    @api.model_create_multi
     def create(self, vals_list):
         self.env.ref('forwardport.updates')._trigger()
         return super().create(vals_list)
@@ -359,6 +359,7 @@ class DeleteBranches(models.Model, Queue):
 
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
+    @api.model_create_multi
     def create(self, vals_list):
         self.env.ref('forwardport.remover')._trigger(datetime.now() - MERGE_AGE)
         return super().create(vals_list)
