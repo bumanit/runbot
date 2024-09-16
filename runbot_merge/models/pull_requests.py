@@ -2298,7 +2298,7 @@ class Stagings(models.Model):
                 prs = self.mapped('batch_ids.prs')
                 logger.info(
                     "%s FF successful, marking %s as merged",
-                    self, prs
+                    self, prs.mapped('display_name'),
                 )
                 self.batch_ids.merge_date = fields.Datetime.now()
 
