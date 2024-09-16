@@ -260,7 +260,7 @@ def test_force_ready(env, repo, config):
     pr_id.skipchecks = True
 
     assert pr_id.state == 'ready'
-    assert pr_id.status == 'pending'
+    assert pr_id.status == 'success'
     reviewer = env['res.users'].browse([env._uid]).partner_id
     assert pr_id.reviewed_by == reviewer
 

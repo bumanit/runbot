@@ -432,7 +432,7 @@ class Batch(models.Model):
                 _logger.info('-> no parent %s (%s)', batch, prs)
                 continue
             if not force_fw and batch.source.fw_policy != 'skipci' \
-                    and (invalid := batch.prs.filtered(lambda p: p.state not in ['validated', 'ready'])):
+                    and (invalid := batch.prs.filtered(lambda p: p.status != 'success')):
                 _logger.info(
                     '-> wrong state %s (%s)',
                     batch,

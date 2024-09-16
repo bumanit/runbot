@@ -1163,7 +1163,7 @@ For your own safety I've ignored *everything in your entire comment*.
         super().modified(fnames, create, before)
 
     @api.depends(
-        'statuses', 'overrides', 'target', 'parent_id',
+        'statuses', 'overrides', 'target', 'parent_id', 'skipchecks',
         'repository.status_ids.context',
         'repository.status_ids.branch_filter',
         'repository.status_ids.prs',
@@ -1173,6 +1173,9 @@ For your own safety I've ignored *everything in your entire comment*.
             statuses = {**json.loads(pr.statuses), **pr._get_overrides()}
 
             pr.statuses_full = json.dumps(statuses, indent=4)
+            if pr.skipchecks:
+                pr.status = 'success'
+                continue
 
             st = 'success'
             for ci in pr.repository.status_ids._for_pr(pr):
