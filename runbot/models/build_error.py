@@ -96,7 +96,7 @@ class BuildError(models.Model):
             cleaned_content = cleaners._r_sub(content)
             vals.update({
                 'cleaned_content': cleaned_content,
-                'fingerprint': self._digest(cleaned_content)
+                'fingerprint': self._digest(cleaned_content, vals.get('module_name'))
             })
         records = super().create(vals_list)
         records.action_assign()
@@ -112,8 +112,9 @@ class BuildError(models.Model):
                     if not vals['active'] and build_error.last_seen_date + relativedelta(days=1) > fields.Datetime.now():
                         raise UserError("This error broke less than one day ago can only be deactivated by admin")
         if 'cleaned_content' in vals:
-            vals.update({'fingerprint': self._digest(vals['cleaned_content'])})
-        result = super(BuildError, self).write(vals)
+            module_name = vals.get('module_name', self.module_name)
+            vals.update({'fingerprint': self._digest(vals['cleaned_content'], module_name)})
+        result = super().write(vals)
         if vals.get('parent_id'):
             for build_error in self:
                 parent = build_error.parent_id
@@ -202,11 +203,15 @@ class BuildError(models.Model):
             error.error_history_ids = self.search([('fingerprint', 'in', fingerprints), ('active', '=', False), ('id', '!=', error.id or False)])
 
     @api.model
-    def _digest(self, s):
+    def _digest(self, s, module_name=''):
+        """compute a sha256 digest of a string combined with a module_name
+
+        :param str s: a cleaned error
+        :param str module_name: a module name
+        :return str: a sha256 digest
         """
-        return a hash 256 digest of the string s
-        """
-        return hashlib.sha256(s.encode()).hexdigest()
+        to_fingerprint = f"{module_name}\n{s}"
+        return hashlib.sha256(to_fingerprint.encode()).hexdigest()
 
     @api.model
     def _parse_logs(self, ir_logs):
@@ -220,7 +225,7 @@ class BuildError(models.Model):
         for log in ir_logs:
             if search_regs._r_search(log.message):
                 continue
-            fingerprint = self._digest(cleaning_regs._r_sub(log.message))
+            fingerprint = self._digest(cleaning_regs._r_sub(log.message), log.name)
             hash_dict[fingerprint] |= log
 
         build_errors = self.env['runbot.build.error']
