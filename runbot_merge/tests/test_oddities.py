@@ -348,6 +348,7 @@ Currently available commands for @{user}:
 |-|-|
 |`help`|displays this help|
 |`fw=no`|does not forward-port this PR|
+|`fw=default`|forward-ports this PR normally|
 |`up to <branch>`|only ports this PR forward to the specified branch (included)|
 |`check`|fetches or refreshes PR metadata, resets mergebot state|
 

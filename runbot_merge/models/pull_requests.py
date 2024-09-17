@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import time
+from enum import IntEnum
 from functools import reduce
 from operator import itemgetter
 from typing import Optional, Union, List, Iterator, Tuple
@@ -879,6 +880,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 case commands.Close() if source_author:
                     feedback(close=True)
                 case commands.FW():
+                    message = None
                     match command:
                         case commands.FW.NO if is_author or source_author:
                             message = "Disabled forward-porting."
@@ -890,10 +892,26 @@ For your own safety I've ignored *everything in your entire comment*.
                         #     message = "Not waiting for merge to create followup forward-ports."
                         case _:
                             msg = f"you don't have the right to {command}."
+                    if message:
+                        # TODO: feedback?
+                        if self.source_id:
+                            "if the pr is not a source, ignore (maybe?)"
+                        elif not self.merge_date:
+                            "if the PR is not merged, it'll be fw'd normally"
+                        elif self.batch_id.fw_policy != 'no' or command == commands.FW.NO:
+                            "if the policy is not being flipped from no to something else, nothing to do"
+                        elif branch_key(self.limit_id) <= branch_key(self.target):
+                            "if the limit is lower than current (old style ignore) there's nothing to do"
+                        else:
+                            message = f"Starting forward-port. {message}"
+                            self.env['forwardport.batches'].create({
+                                'batch_id': self.batch_id.id,
+                                'source': 'merge',
+                            })
 
-                    if not msg:
                         (self.source_id or self).batch_id.fw_policy = command.name.lower()
                         feedback(message=message)
+
                 case commands.Limit(branch) if is_author:
                     if branch is None:
                         feedback(message="'ignore' is deprecated, use 'fw=no' to disable forward porting.")
@@ -901,7 +919,7 @@ For your own safety I've ignored *everything in your entire comment*.
                     for p in self.batch_id.prs:
                         ping, m = p._maybe_update_limit(limit)
 
-                        if ping and p == self:
+                        if ping is Ping.ERROR and p == self:
                             msg = m
                         else:
                             if ping:
@@ -934,31 +952,37 @@ For your own safety I've ignored *everything in your entire comment*.
             feedback(message=f"@{login}{rejections}{footer}")
         return 'rejected'
 
-    def _maybe_update_limit(self, limit: str) -> Tuple[bool, str]:
+    def _maybe_update_limit(self, limit: str) -> Tuple[Ping, str]:
         limit_id = self.env['runbot_merge.branch'].with_context(active_test=False).search([
             ('project_id', '=', self.repository.project_id.id),
             ('name', '=', limit),
         ])
         if not limit_id:
-            return True, f"there is no branch {limit!r}, it can't be used as a forward port target."
+            return Ping.ERROR, f"there is no branch {limit!r}, it can't be used as a forward port target."
 
         if limit_id != self.target and not limit_id.active:
-            return True, f"branch {limit_id.name!r} is disabled, it can't be used as a forward port target."
+            return Ping.ERROR, f"branch {limit_id.name!r} is disabled, it can't be used as a forward port target."
 
         # not forward ported yet, just acknowledge the request
         if not self.source_id and self.state != 'merged':
             self.limit_id = limit_id
             if branch_key(limit_id) <= branch_key(self.target):
-                return False, "Forward-port disabled (via limit)."
+                return Ping.NO, "Forward-port disabled (via limit)."
             else:
-                return False, f"Forward-porting to {limit_id.name!r}."
+                suffix = ''
+                if self.batch_id.fw_policy == 'no':
+                    self.batch_id.fw_policy = 'default'
+                    suffix = " Re-enabled forward-porting (you should use "\
+                             "`fw=default` to re-enable forward porting "\
+                             "after disabling)."
+                return Ping.NO, f"Forward-porting to {limit_id.name!r}.{suffix}"
 
         # if the PR has been forwardported
         prs = (self | self.forwardport_ids | self.source_id | self.source_id.forwardport_ids)
         tip = max(prs, key=pr_key)
         # if the fp tip was closed it's fine
         if tip.state == 'closed':
-            return True, f"{tip.display_name} is closed, no forward porting is going on"
+            return Ping.ERROR, f"{tip.display_name} is closed, no forward porting is going on"
 
         prs.limit_id = limit_id
 
@@ -977,7 +1001,7 @@ For your own safety I've ignored *everything in your entire comment*.
             except psycopg2.errors.LockNotAvailable:
                 # row locked = port occurring and probably going to succeed,
                 # so next(real_limit) likely a done deal already
-                return True, (
+                return Ping.ERROR, (
                     f"Forward port of {tip.display_name} likely already "
                     f"ongoing, unable to cancel, close next forward port "
                     f"when it completes.")
@@ -988,6 +1012,9 @@ For your own safety I've ignored *everything in your entire comment*.
             # forward porting was previously stopped at tip, and we want it to
             # resume
             if tip.state == 'merged':
+                if tip.batch_id.source.fw_policy == 'no':
+                    # hack to ping the user but not rollback the transaction
+                    return Ping.YES, f"can not forward-port, policy is 'no' on {(tip.source_id or tip).display_name}"
                 self.env['forwardport.batches'].create({
                     'batch_id': tip.batch_id.id,
                     'source': 'fp' if tip.parent_id else 'merge',
@@ -1022,7 +1049,7 @@ For your own safety I've ignored *everything in your entire comment*.
             for p in (self.source_id | root) - self
         ])
 
-        return False, msg
+        return Ping.NO, msg
 
 
     def _find_next_target(self) -> Optional[Branch]:
@@ -1630,6 +1657,13 @@ For your own safety I've ignored *everything in your entire comment*.
             'label': new_label,
             'batch_id': batch.create({}).id,
         })
+
+
+class Ping(IntEnum):
+    NO = 0
+    YES = 1
+    ERROR = 2
+
 
 # ordering is a bit unintuitive because the lowest sequence (and name)
 # is the last link of the fp chain, reasoning is a bit more natural the

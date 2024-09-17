@@ -200,8 +200,8 @@ class FW(enum.Enum):
     @classmethod
     def help(cls, is_reviewer: bool) -> Iterator[Tuple[str, str]]:
         yield str(cls.NO), "does not forward-port this PR"
+        yield str(cls.DEFAULT), "forward-ports this PR normally"
         if is_reviewer:
-            yield str(cls.DEFAULT), "forward-ports this PR normally"
             yield str(cls.SKIPCI), "does not wait for a forward-port's statuses to succeed before creating the next one"
 
 
