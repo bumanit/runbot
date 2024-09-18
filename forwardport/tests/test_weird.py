@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from utils import seen, Commit, to_pr, make_basic
+from utils import seen, Commit, to_pr, make_basic, prevent_unstaging
 
 
 def test_no_token(env, config, make_repo):
@@ -935,7 +935,8 @@ def test_missing_magic_ref(env, config, make_repo):
     pr_id = to_pr(env, pr)
     assert pr_id.staging_id
 
-    pr_id.head = '0'*40
+    with prevent_unstaging(pr_id.staging_id):
+        pr_id.head = '0'*40
     with prod:
         prod.post_status('staging.a', 'success', 'legal/cla')
         prod.post_status('staging.a', 'success', 'ci/runbot')

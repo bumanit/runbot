@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import contextlib
 import itertools
 import re
 import time
@@ -200,3 +201,16 @@ Signed-off-by: {pr_id.reviewed_by.formatted_email}"""
 def ensure_one(records):
     assert len(records) == 1
     return records
+
+
+@contextlib.contextmanager
+def prevent_unstaging(st) -> None:
+    # hack: `Stagings.cancel` only cancels *active* stagings,
+    # so if we disable the staging, do a thing, then re-enable
+    # then things should work out
+    assert st and st.active, "preventing unstaging of not-a-staging is not useful"
+    st.active = False
+    try:
+        yield
+    finally:
+        st.active = True

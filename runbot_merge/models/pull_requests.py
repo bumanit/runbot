@@ -1164,7 +1164,7 @@ For your own safety I've ignored *everything in your entire comment*.
         # temporarily on the same head, or on the same head with different
         # targets
         updateable = self.filtered(lambda p: not p.merge_date)
-        updateable.statuses = statuses
+        updateable.statuses = statuses or '{}'
         for pr in updateable:
             if pr.status == "failure":
                 statuses = json.loads(pr.statuses_full)
@@ -1212,6 +1212,9 @@ For your own safety I've ignored *everything in your entire comment*.
                     break
                 if v == 'pending':
                     st = 'pending'
+            if pr.status != 'failure' and st == 'failure':
+                pr.unstage("had CI failure after staging")
+
             pr.status = st
 
     @api.depends(
@@ -1346,7 +1349,7 @@ For your own safety I've ignored *everything in your entire comment*.
 
         pr = super().create(vals)
         c = self.env['runbot_merge.commit'].search([('sha', '=', pr.head)])
-        pr._validate(c.statuses or '{}')
+        pr._validate(c.statuses)
 
         if pr.state not in ('closed', 'merged'):
             self.env.ref('runbot_merge.pr.created')._send(
@@ -1423,8 +1426,13 @@ For your own safety I've ignored *everything in your entire comment*.
 
         newhead = vals.get('head')
         if newhead:
+            if pid := self.env.cr.precommit.data.get('change-author'):
+                writer = self.env['res.partner'].browse(pid)
+            else:
+                writer = self.env.user.partner_id
+            self.unstage("updated by %s", writer.github_login or writer.name)
             c = self.env['runbot_merge.commit'].search([('sha', '=', newhead)])
-            self._validate(c.statuses or '{}')
+            self._validate(c.statuses)
         return w
 
     def _check_linked_prs_statuses(self, commit=False):
