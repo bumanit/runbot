@@ -143,8 +143,8 @@ class Host(models.Model):
         else:
             _logger.info('Building docker images...')
             for dockerfile in self.env['runbot.dockerfile'].search([('to_build', '=', True)]):
-                dockerfile._build(self)
-                if is_registry:
+                result = dockerfile._build(self)
+                if result.get('image_id') and is_registry:
                     docker_push(dockerfile.image_tag)
 
         _logger.info('Cleaning docker images...')

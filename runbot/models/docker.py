@@ -323,11 +323,12 @@ class Dockerfile(models.Model):
                 should_save_result = True
 
         if should_save_result:
-            result = self.env['runbot.docker_build_result'].create(docker_build_result_values)
+            build_result = self.env['runbot.docker_build_result'].create(docker_build_result_values)
             if not success:
-                message = f'Build failure, check results for more info ({result.summary})'
+                message = f'Build failure, check results for more info ({build_result.summary})'
                 self.message_post(body=message)
                 _logger.error(message)
+        return result
 
 
 class DockerBuildOutput(models.Model):
