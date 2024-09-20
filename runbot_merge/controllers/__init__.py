@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import logging
 import json
+from datetime import datetime
 
 import sentry_sdk
 import werkzeug.exceptions
@@ -358,7 +359,8 @@ def handle_status(env, event):
         event['context']: {
             'state': event['state'],
             'target_url': event['target_url'],
-            'description': event['description']
+            'description': event['description'],
+            'updated_at': datetime.now().isoformat(timespec='seconds'),
         }
     })
     # create status, or merge update into commit *unless* the update is already

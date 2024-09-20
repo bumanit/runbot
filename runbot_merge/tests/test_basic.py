@@ -605,7 +605,6 @@ def test_staging_ci_timeout(env, repo, config, page, update_op: Callable[[int], 
     assert dangerbox
     assert dangerbox[0].text == 'timed out (>60 minutes)'
 
-@pytest.mark.defaultstatuses
 def test_timeout_bump_on_pending(env, repo, config):
     with repo:
         [m, c] = repo.make_commits(
@@ -615,8 +614,9 @@ def test_timeout_bump_on_pending(env, repo, config):
         )
         repo.make_ref('heads/master', m)
 
-        prx = repo.make_pr(title='title', body='body', target='master', head=c)
-        repo.post_status(prx.head, 'success')
+        prx = repo.make_pr(target='master', head=c)
+        repo.post_status(prx.head, 'success', 'ci/runbot')
+        repo.post_status(prx.head, 'success', 'legal/cla')
         prx.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -624,9 +624,18 @@ def test_timeout_bump_on_pending(env, repo, config):
     old_timeout = odoo.fields.Datetime.to_string(datetime.datetime.now() - datetime.timedelta(days=15))
     st.timeout_limit = old_timeout
     with repo:
-        repo.post_status('staging.master', 'pending')
+        repo.post_status('staging.master', 'pending', 'ci/runbot')
     env.run_crons(None)
-    assert st.timeout_limit > old_timeout
+    assert st.timeout_limit > old_timeout, "receiving a pending status should bump the timeout"
+
+    st.timeout_limit = old_timeout
+    # clear the statuses cache to remove the memoized status times
+    st.statuses_cache = "{}"
+    st.commit_ids.statuses = "{}"
+    with repo:
+        repo.post_status('staging.master', 'success', 'legal/cla')
+    env.run_crons(None)
+    assert st.timeout_limit == old_timeout, "receiving a success status should *not* bump the timeout"
 
 def test_staging_ci_failure_single(env, repo, users, config, page):
     """ on failure of single-PR staging, mark & notify failure
@@ -3327,8 +3336,8 @@ class TestUnknownPR:
 
         c = env['runbot_merge.commit'].search([('sha', '=', prx.head)])
         assert json.loads(c.statuses) == {
-            'legal/cla': {'state': 'success', 'target_url': None, 'description': None},
-            'ci/runbot': {'state': 'success', 'target_url': 'http://example.org/wheee', 'description': None}
+            'legal/cla': {'state': 'success', 'target_url': None, 'description': None, 'updated_at': matches("$$")},
+            'ci/runbot': {'state': 'success', 'target_url': 'http://example.org/wheee', 'description': None, 'updated_at': matches("$$")}
         }
         assert prx.comments == [
             seen(env, prx, users),

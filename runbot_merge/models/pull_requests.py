@@ -2133,6 +2133,7 @@ class Stagings(models.Model):
         if not self.env.user.has_group('runbot_merge.status'):
             raise AccessError("You are not allowed to post a status.")
 
+        now = datetime.datetime.now().isoformat(timespec='seconds')
         for s in self:
             if not s.target.project_id.staging_rpc:
                 continue
@@ -2145,6 +2146,7 @@ class Stagings(models.Model):
                 'state': status,
                 'target_url': target_url,
                 'description': description,
+                'updated_at': now,
             }
             s.statuses_cache = json.dumps(st)
 
@@ -2158,39 +2160,45 @@ class Stagings(models.Model):
         "heads.repository_id.status_ids.context",
     )
     def _compute_state(self):
-        for s in self:
-            if s.state != 'pending':
+        for staging in self:
+            if staging.state != 'pending':
                 continue
 
             # maps commits to the statuses they need
             required_statuses = [
-                (h.commit_id.sha, h.repository_id.status_ids._for_staging(s).mapped('context'))
-                for h in s.heads
+                (h.commit_id.sha, h.repository_id.status_ids._for_staging(staging).mapped('context'))
+                for h in staging.heads
             ]
-            cmap = json.loads(s.statuses_cache)
+            cmap = json.loads(staging.statuses_cache)
 
-            update_timeout_limit = False
-            st = 'success'
+            last_pending = ""
+            state = 'success'
             for head, reqs in required_statuses:
                 statuses = cmap.get(head) or {}
-                for v in map(lambda n: statuses.get(n, {}).get('state'), reqs):
-                    if st == 'failure' or v in ('error', 'failure'):
-                        st = 'failure'
+                for status in (statuses.get(n, {}) for n in reqs):
+                    v = status.get('state')
+                    if state == 'failure' or v in ('error', 'failure'):
+                        state = 'failure'
                     elif v is None:
-                        st = 'pending'
+                        state = 'pending'
                     elif v == 'pending':
-                        st = 'pending'
-                        update_timeout_limit = True
+                        state = 'pending'
+                        last_pending = max(last_pending, status.get('updated_at', ''))
                     else:
                         assert v == 'success'
 
-            s.state = st
-            if s.state != 'pending':
+            staging.state = state
+            if staging.state != 'pending':
                 self.env.ref("runbot_merge.merge_cron")._trigger()
-            if update_timeout_limit:
-                s.timeout_limit = datetime.datetime.now() + datetime.timedelta(minutes=s.target.project_id.ci_timeout)
-                self.env.ref("runbot_merge.merge_cron")._trigger(s.timeout_limit)
-                _logger.debug("%s got pending status, bumping timeout to %s (%s)", self, s.timeout_limit, cmap)
+
+            if last_pending:
+                timeout = datetime.datetime.fromisoformat(last_pending) \
+                      + datetime.timedelta(minutes=staging.target.project_id.ci_timeout)
+
+                if timeout > staging.timeout_limit:
+                    staging.timeout_limit = timeout
+                    self.env.ref("runbot_merge.merge_cron")._trigger(timeout)
+                    _logger.debug("%s got pending status, bumping timeout to %s", staging, timeout)
 
     def action_cancel(self):
         w = self.env['runbot_merge.stagings.cancel'].create({
