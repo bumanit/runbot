@@ -620,25 +620,45 @@ class PullRequests(models.Model):
             return json.loads(self.overrides)
         return {}
 
-    def _get_or_schedule(self, repo_name, number, *, target=None, closing=False):
+    def _get_or_schedule(self, repo_name, number, *, target=None, closing=False) -> PullRequests | None:
         repo = self.env['runbot_merge.repository'].search([('name', '=', repo_name)])
         if not repo:
-            return
-
-        if target and not repo.project_id._has_branch(target):
-            self.env.ref('runbot_merge.pr.fetch.unmanaged')._send(
-                repository=repo,
-                pull_request=number,
-                format_args={'repository': repo, 'branch': target, 'number': number}
+            source = self.env['runbot_merge.events_sources'].search([('repository', '=', repo_name)])
+            _logger.warning(
+                "Got a PR notification for unknown repository %s (source %s)",
+                repo_name, source,
             )
             return
 
-        pr = self.search([
-            ('repository', '=', repo.id),
-            ('number', '=', number,)
-        ])
+        if target:
+            b = self.env['runbot_merge.branch'].with_context(active_test=False).search([
+                ('project_id', '=', repo.project_id.id),
+                ('name', '=', target),
+            ])
+            tmpl = None if b.active \
+                else 'runbot_merge.handle.branch.inactive' if b\
+                else 'runbot_merge.pr.fetch.unmanaged'
+        else:
+            tmpl = None
+
+        pr = self.search([('repository', '=', repo.id), ('number', '=', number)])
+        if pr and not pr.target.active:
+            tmpl = 'runbot_merge.handle.branch.inactive'
+            target = pr.target.name
+
+        if tmpl and not closing:
+            self.env.ref(tmpl)._send(
+                repository=repo,
+                pull_request=number,
+                format_args={'repository': repo_name, 'branch': target, 'number': number},
+            )
+
         if pr:
             return pr
+
+        # if the branch is unknown or inactive, no need to fetch the PR
+        if tmpl:
+            return
 
         Fetch = self.env['runbot_merge.fetch_job']
         if Fetch.search([('repository', '=', repo.id), ('number', '=', number)]):
