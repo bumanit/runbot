@@ -118,18 +118,16 @@ class CustomTriggerWizard(models.TransientModel):
 
     @api.onchange('trigger_id')
     def _onchange_trigger_id(self):
-        for wizard in self:
-            if wizard.trigger_id:
-                wizard.restore_trigger_id = wizard.trigger_id.restore_trigger_id
-                if wizard.restore_trigger_id and not wizard.restore_mode:
-                    wizard.restore_mode = 'auto'
+        if self.trigger_id:
+            self.restore_trigger_id = self.trigger_id.restore_trigger_id
+            if self.restore_trigger_id and not self.restore_mode:
+                self.restore_mode = 'auto'
         self._onchange_config_data()
         self._onchange_warnings()
 
     @api.onchange('number_build', 'extra_params', 'child_extra_params', 'restore_dump_url', 'child_config_id', 'restore_trigger_id', 'restore_database_suffix', 'restore_mode')
     def _onchange_config_data(self):
-       for wizard in self:
-           wizard.config_data = self._get_config_data()
+        self.config_data = self._get_config_data()
 
     def _get_config_data(self):
         config_data = {}

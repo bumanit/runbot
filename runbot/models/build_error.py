@@ -85,15 +85,13 @@ class BuildError(models.Model):
 
     @api.onchange('test_tags')
     def _onchange_test_tags(self):
-        for record in self:
-            record.tags_min_version_id = min(record.version_ids, key=lambda rec: rec.number)
-            record.tags_max_version_id = max(record.version_ids, key=lambda rec: rec.number)
+        self.tags_min_version_id = min(self.version_ids, key=lambda rec: rec.number)
+        self.tags_max_version_id = max(self.version_ids, key=lambda rec: rec.number)
 
     @api.onchange('customer')
     def _onchange_customer(self):
-        for record in self:
-            if not self.responsible:
-                self.responsible = self.customer
+        if not self.responsible:
+            self.responsible = self.customer
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -446,9 +444,8 @@ class ErrorBulkWizard(models.TransientModel):
 
     @api.onchange('fixing_commit', 'chatter_comment')
     def _onchange_commit_comment(self):
-        for record in self:
-            if record.fixing_commit or record.chatter_comment:
-                record.archive = True
+        if self.fixing_commit or self.chatter_comment:
+            self.archive = True
 
     def action_submit(self):
         error_ids = self.env['runbot.build.error'].browse(self.env.context.get('active_ids'))
