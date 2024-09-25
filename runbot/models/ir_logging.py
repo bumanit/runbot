@@ -22,7 +22,7 @@ class IrLogging(models.Model):
     build_id = fields.Many2one('runbot.build', 'Build', index=True, ondelete='cascade')
     active_step_id = fields.Many2one('runbot.build.config.step', 'Active step', index=True)
     type = fields.Selection(selection_add=TYPES, string='Type', required=True, index=True, ondelete={t[0]: 'cascade' for t in TYPES})
-    error_id = fields.Many2one('runbot.build.error', compute='_compute_known_error')  # remember to never store this field
+    error_content_id = fields.Many2one('runbot.build.error.content', compute='_compute_known_error')  # remember to never store this field
     dbname = fields.Char(string='Database Name', index=False)
 
     @api.model_create_multi
@@ -57,12 +57,12 @@ class IrLogging(models.Model):
         cleaning_regexes = self.env['runbot.error.regex'].search([('re_type', '=', 'cleaning')])
         fingerprints = defaultdict(list)
         for ir_logging in self:
-            ir_logging.error_id = False
+            ir_logging.error_content_id = False
             if ir_logging.level in ('ERROR', 'CRITICAL', 'WARNING') and ir_logging.type == 'server':
-                fingerprints[self.env['runbot.build.error']._digest(cleaning_regexes._r_sub(ir_logging.message))].append(ir_logging)
-        for build_error in self.env['runbot.build.error'].search([('fingerprint', 'in', list(fingerprints.keys()))], order='active asc'):
-            for ir_logging in fingerprints[build_error.fingerprint]:
-                ir_logging.error_id = build_error.id
+                fingerprints[self.env['runbot.build.error.content']._digest(cleaning_regexes._r_sub(ir_logging.message))].append(ir_logging)
+        for build_error_content in self.env['runbot.build.error.content'].search([('fingerprint', 'in', list(fingerprints.keys()))]).sorted(lambda ec: not ec.error_id.active):
+            for ir_logging in fingerprints[build_error_content.fingerprint]:
+                ir_logging.error_content_id = build_error_content.id
 
     def _prepare_create_values(self, vals_list):
         # keep the given create date
@@ -160,9 +160,8 @@ class RunbotErrorLog(models.Model):
         return []
 
     def _parse_logs(self):
-        BuildError = self.env['runbot.build.error']
         ir_logs = self.env['ir.logging'].browse(self.ids)
-        return BuildError._parse_logs(ir_logs)
+        return self.env['runbot.build.error']._parse_logs(ir_logs)
 
     def init(self):
         """ Create an SQL view for ir.logging """

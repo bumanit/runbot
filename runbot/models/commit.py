@@ -113,7 +113,6 @@ class Commit(models.Model):
             _logger.info('git export: exporting to %s (already exists)', export_path)
             return export_path
 
-
         _logger.info('git export: exporting to %s (new)', export_path)
         os.makedirs(export_path)
 

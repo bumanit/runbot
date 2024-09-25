@@ -237,8 +237,9 @@ class Batch(models.Model):
         #  use last not preparing batch to define previous repos_heads instead of branches heads:
         #  Will allow to have a diff info on base bundle, compare with previous bundle
         last_base_batch = self.env['runbot.batch'].search([('bundle_id', '=', bundle.base_id.id), ('state', '!=', 'preparing'), ('category_id', '=', self.category_id.id), ('id', '!=', self.id)], order='id desc', limit=1)
-        base_head_per_repo = {commit.repo_id.id: commit for commit in last_base_batch.commit_ids}
-        self._update_commits_infos(base_head_per_repo)  # set base_commit, diff infos, ...
+        if last_base_batch:
+            base_head_per_repo = {commit.repo_id.id: commit for commit in last_base_batch.commit_ids}
+            self._update_commits_infos(base_head_per_repo)  # set base_commit, diff infos, ...
 
         # 2. FIND missing commit in a compatible base bundle
         if bundle.is_base or auto_rebase:
@@ -495,7 +496,6 @@ class BatchSlot(models.Model):
     _name = 'runbot.batch.slot'
     _description = 'Link between a bundle batch and a build'
     _order = 'trigger_id,id'
-
 
     batch_id = fields.Many2one('runbot.batch', index=True)
     trigger_id = fields.Many2one('runbot.trigger', index=True)

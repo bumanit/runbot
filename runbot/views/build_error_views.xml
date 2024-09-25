@@ -1,35 +1,115 @@
 <odoo>
   <data>
+    <record id="runbot_build_error_form" model="ir.ui.view">
+      <field name="name">runbot.build.error.form</field>
+      <field name="model">runbot.build.error</field>
+      <field name="arch" type="xml">
+        <form>
+          <sheet>
+              <widget name="web_ribbon" title="Test-tags" bg_color="bg-danger" invisible="not test_tags"/>
+              <button name="action_view_errors" string="See all linked errors" type="object" class="oe_highlight"/>
+              <group string="Base info">
+                <field name="name"/>
+                <field name="error_content_ids" readonly="1">
+                    <tree>
+                      <field name="content" readonly="1"/>
+                      <!--field name="module_name" readonly="1"/-->
+                      <!--field name="function" readonly="1"/-->
+                      <!--field name="file_path" readonly="1"/-->
+                      <field name="version_ids" widget="many2many_tags" optional="hide"/>
+                      <field name="trigger_ids" widget="many2many_tags" optional="hide"/>
+                      <field name="tag_ids" widget="many2many_tags" readonly="1" optional="hide"/>
+                      <field name="random" optional="hide"/>
+                      <field name="first_seen_date" widget="frontend_url" options="{'link_field': 'first_seen_build_id'}"/>
+                      <field name="last_seen_date" widget="frontend_url" options="{'link_field': 'last_seen_build_id'}"/>
+                      <field name="first_seen_build_id" column_invisible="True"/>
+                      <field name="last_seen_build_id" column_invisible="True"/>
+                    </tree>
+                </field>
+              </group>
+              <group name="fixer_info" string="Fixing" col="2">
+                <group>
+                  <field name="responsible"/>
+                  <field name="customer"/>
+                  <field name="team_id"/>
+                  <field name="fixing_pr_id"/>
+                  <field name="fixing_pr_url" widget="url"/>
+                  <field name="active"/>
+                  <field name="test_tags" decoration-danger="True" readonly="1" groups="!runbot.group_runbot_admin"/>
+                  <field name="test_tags" decoration-danger="True" groups="runbot.group_runbot_admin"/>
+                  <field name="tags_min_version_id" invisible="not test_tags"/>
+                  <field name="tags_max_version_id" invisible="not test_tags"/>
+                </group>
+                <group>
+                  <field name="version_ids" widget="many2many_tags"/>
+                  <field name="trigger_ids" widget="many2many_tags"/>
+                  <field name="tag_ids" widget="many2many_tags"/>
+                  <field name="random"/>
+                  <field name="first_seen_date" widget="frontend_url" options="{'link_field': 'first_seen_build_id'}"/>
+                  <field name="last_seen_date" widget="frontend_url" options="{'link_field': 'last_seen_build_id'}"/>
+                  <field name="first_seen_build_id" invisible="True"/>
+                  <field name="last_seen_build_id" invisible="True"/>
+                </group>
+              </group>
+              <group>
+                <field name="previous_error_id" readonly="1" invisible="not previous_error_id" text-decoration-danger="True"/>
+              </group>  
+              <notebook>
+                <page string="Builds">
+                  <field name="unique_build_error_link_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
+                    <tree default_order="log_date desc,id desc">
+                      <field name="log_date"/>
+                      <field name="host" groups="base.group_no_one" optional="hide"/>
+                      <field name="dest" optional="hide"/>
+                      <field name="version_id"/>
+                      <field name="trigger_id"/>
+                      <field name="description"/>
+                      <field name="build_url" widget="url" readonly="1" text="View build"/>
+                    </tree>
+                  </field>
+                </page>
+                <page string="All links">
+                  <field name="build_error_link_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
+                    <tree default_order="log_date desc,id desc">
+                      <field name="log_date"/>
+                      <field name="host" groups="base.group_no_one" optional="hide"/>
+                      <field name="dest" optional="hide"/>
+                      <field name="version_id"/>
+                      <field name="trigger_id"/>
+                      <field name="description"/>
+                      <field name="error_content_id" widget="many2one" string="Linked Error log"/>
+                      <field name="build_url" widget="url" readonly="1" text="View build"/>
+                    </tree>
+                  </field>
+                </page>
+              </notebook>
+          </sheet>
+          <div class="oe_chatter">
+              <field name="message_follower_ids"/>
+              <field name="message_ids"/>
+              <field name="activity_ids"/>
+          </div>
+        </form>
+      </field>
+    </record>
+
     <record id="build_error_form" model="ir.ui.view">
-        <field name="name">runbot.build.error.form</field>
-        <field name="model">runbot.build.error</field>
+        <field name="name">runbot.build.error.content.form</field>
+        <field name="model">runbot.build.error.content</field>
         <field name="arch" type="xml">
           <form>
             <sheet>
-              <widget name="web_ribbon" title="Test-tags" bg_color="bg-danger" invisible="not test_tags"/>
-              <widget name="web_ribbon" title="Linked to another error" bg_color="bg-warning" invisible="not parent_id"/>
-              <header>
-              </header>
+                <group>
+                  <field name="error_id"/>
+                </group>
                 <group name="build_error_group" string="Base info" col="2">
                   <field name="content" readonly="1"/>
                   <field name="module_name" readonly="1"/>
                   <field name="function" readonly="1"/>
                   <field name="file_path" readonly="1"/>
                 </group>
-                <group name="fixer_info" string="Fixing" col="2">
+                <group name="infos" string="" col="2">
                   <group>
-                    <field name="responsible" readonly="parent_id and not responsible"/>
-                    <field name="team_id" readonly="parent_id and not team_id"/>
-                    <field name="fixing_pr_id"/>
-                    <field name="fixing_pr_url" widget="url"/>
-                    <field name="active"/>
-                    <field name="test_tags" decoration-danger="True" readonly="1" groups="!runbot.group_runbot_admin"/>
-                    <field name="test_tags" decoration-danger="True" groups="runbot.group_runbot_admin" readonly="parent_id and not test_tags"/>
-                    <field name="tags_min_version_id" invisible="not test_tags"/>
-                    <field name="tags_max_version_id" invisible="not test_tags"/>
-                  </group>
-                  <group>
-                    <field name="customer"/>
                     <field name="version_ids" widget="many2many_tags"/>
                     <field name="trigger_ids" widget="many2many_tags"/>
                     <field name="tag_ids" widget="many2many_tags" readonly="1"/>
@@ -42,14 +122,13 @@
                     <field name="first_seen_build_id" widget="frontend_url"/>
                   </group>
                   <group>
-                    <field name="parent_id" decoration-warning="parent_id != False"/>
                     <field name="last_seen_date"/>
                     <field name="last_seen_build_id" widget="frontend_url"/>
                   </group>
-                </group>
+                </group>               
                 <notebook>
                   <page string="Builds">
-                    <field name="children_build_error_link_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
+                    <field name="build_error_link_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
                       <tree>
                         <field name="log_date"/>
                         <field name="host" groups="base.group_no_one"/>
@@ -57,34 +136,8 @@
                         <field name="version_id"/>
                         <field name="trigger_id"/>
                         <field name="description"/>
-                        <field name="build_error_id" widget="many2one" string="Linked Error"/>
+                        <field name="error_content_id" widget="many2one" string="Linked Error"/>
                         <field name="build_url" widget="url" readonly="1" text="View build"/>
-                      </tree>
-                    </field>
-                  </page>
-                  <page string="Linked Errors" invisible="child_ids == []">
-                    <field name="child_ids" widget="many2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
-                      <tree>
-                        <field name="create_date"/>
-                        <field name="module_name"/>
-                        <field name="summary"/>
-                        <field name="build_count"/>
-                        <button type="object" name="get_formview_action" icon="fa-arrow-right" title="View linked error"/>
-                      </tree>
-                    </field>
-                  </page>
-                  <page string="Error history" invisible="error_history_ids == []">
-                    <field name="error_history_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
-                      <tree>
-                        <field name="create_date"/>
-                        <field name="module_name"/>
-                        <field name="summary"/>
-                        <field name="random"/>
-                        <field name="build_count"/>
-                        <field name="responsible"/>
-                        <field name="fixing_commit"/>
-                        <field name="id"/>
-                        <button type="object" name="get_formview_action" icon="fa-arrow-right" title="View linked error"/>
                       </tree>
                     </field>
                   </page>
@@ -92,7 +145,6 @@
                     <group name="build_error_group">
                       <field name="fingerprint" readonly="1"/>
                       <field name="cleaned_content" readonly="1"/>
-                      <field name="fixing_commit" widget="url"/>
                       <field name="bundle_ids" widget="many2many_tags"/>
                     </group>
                   </page>
@@ -119,7 +171,6 @@
               </group>
               <group name="Fix">
                 <field name="fixing_pr_id"/>
-                <field name="fixing_commit"/>
               </group>
               <group>
                 <field name="chatter_comment"/>
@@ -147,8 +198,40 @@
     </record>
 
     <record id="build_error_view_tree" model="ir.ui.view">
-        <field name="name">runbot.build.error.tree</field>
-        <field name="model">runbot.build.error</field>
+      <field name="name">runbot.build.error.tree</field>
+      <field name="model">runbot.build.error</field>
+      <field name="arch" type="xml">
+          <tree string="Errors"
+                decoration-danger="test_tags and (fixing_pr_alive or not fixing_pr_id)"
+                decoration-success="fixing_pr_id and not test_tags and not fixing_pr_alive"
+                decoration-warning="test_tags and fixing_pr_id and not fixing_pr_alive"
+                multi_edit="1"
+                >
+              <header>
+                <button name="%(runbot.runbot_open_bulk_wizard)d" string="Bulk Update" type="action" groups="runbot.group_runbot_admin,runbot.group_runbot_error_manager"/>
+              </header>
+              <field name="name" optional="show" readonly="1"/>
+              <field name="description" optional="hide" readonly="1"/>
+              <field name="random" string="Random"/>
+              <field name="first_seen_date" string="First Seen" optional="hide" readonly="1"/>
+              <field name="last_seen_date" string="Last Seen" readonly="1" options="{'link_field': 'last_seen_build_id'}"/>
+              <field name="last_seen_build_id" column_invisible="True"/>
+              <field name="error_count" readonly="1"/>
+              <field name="build_count" readonly="1"/>
+              <field name="team_id"/>
+              <field name="test_tags" optional="hide"/>
+              <field name="tags_min_version_id" string="Tags Min" optional="hide"/>
+              <field name="tags_max_version_id" string="Tags Max" optional="hide"/>
+              <field name="fixing_pr_id" optional="hide"/>
+              <field name="fixing_pr_alive" optional="hide"/>
+              <field name="fixing_pr_url" widget="url" text="view PR" readonly="1" invisible="not fixing_pr_url"/>
+          </tree>
+      </field>
+  </record>
+
+    <record id="build_error_content_view_tree" model="ir.ui.view">
+        <field name="name">runbot.build.error.content.tree</field>
+        <field name="model">runbot.build.error.content</field>
         <field name="arch" type="xml">
             <tree string="Errors"
                   decoration-danger="test_tags and (fixing_pr_alive or not fixing_pr_id)"
@@ -166,13 +249,12 @@
                 <field name="first_seen_date" string="First Seen" optional="hide" readonly="1"/>
                 <field name="last_seen_date" string="Last Seen" readonly="1"/>
                 <field name="build_count" readonly="1"/>
-                <field name="responsible"/>
                 <field name="team_id"/>
-                <field name="test_tags"/>
-                <field name="tags_min_version_id" string="Tags Min" optional="show"/>
-                <field name="tags_max_version_id" string="Tags Max" optional="show"/>
-                <field name="fixing_pr_id"/>
-                <field name="fixing_pr_alive" invisible="1"/>
+                <field name="test_tags" optional="hide"/>
+                <field name="tags_min_version_id" string="Tags Min" optional="hide"/>
+                <field name="tags_max_version_id" string="Tags Max" optional="hide"/>
+                <field name="fixing_pr_id" optional="hide"/>
+                <field name="fixing_pr_alive" optional="hide"/>
                 <field name="fixing_pr_url" widget="url" text="view PR" readonly="1" invisible="not fixing_pr_url"/>
                 <field name="fingerprint" optional="hide"/>
             </tree>
@@ -180,22 +262,18 @@
     </record>
 
     <record id="build_error_search_view" model="ir.ui.view">
-      <field name="name">runbot.build.error.log.filter</field>
+      <field name="name">runbot.build.error.filter</field>
       <field name="model">runbot.build.error</field>
       <field name="arch" type="xml">
         <search string="Search errors">
           <field name="content"/>
-          <field name="module_name"/>
-          <field name="function"/>
+          <field name="description"/>
           <field name="version_ids"/>
           <field name="responsible"/>
           <field name="team_id"/>
-          <field name="fixing_commit"/>
           <filter string="Assigned to me" name="my_errors" domain="[('responsible', '=', uid)]"/>
           <separator/>
           <filter string="Customer is me" name="my_errors_customer" domain="[('customer', '=', uid)]"/>
-          <separator/>
-          <filter string="No Parent" name="no_parent_error" domain="[('parent_id', '=', False)]"/>
           <separator/>
           <filter string="Undeterministic" name="random_error" domain="[('random', '=', True)]"/>
           <filter string="Deterministic" name="random_error" domain="[('random', '=', False)]"/>
@@ -217,11 +295,42 @@
       </field>
     </record>
 
+    <record id="build_error_content_search_view" model="ir.ui.view">
+      <field name="name">runbot.build.error.content.log.filter</field>
+      <field name="model">runbot.build.error.content</field>
+      <field name="arch" type="xml">
+        <search string="Search errors">
+          <field name="content"/>
+          <field name="module_name"/>
+          <field name="function"/>
+          <field name="version_ids"/>
+          <filter name="group_error" string="By error" context="{'group_by':'error_id'}"/>
+          <filter string="Undeterministic" name="random_error" domain="[('random', '=', True)]"/>
+          <filter string="Deterministic" name="random_error" domain="[('random', '=', False)]"/>
+          <separator/>
+          <filter string="Having a PR" name="pr_set_errors" domain="[('fixing_pr_id', '!=', False)]"/>
+          <filter string="Fixing PR is closed" name="pr_closed_errors" domain="[('fixing_pr_id', '!=', False), ('fixing_pr_id.alive', '=', False)]"/>
+          <filter string="Fixing PR is open" name="pr_open_errors" domain="[('fixing_pr_id', '!=', False), ('fixing_pr_id.alive', '=', True)]"/>
+          <separator/>
+          <filter string="Test Tags" name="test_tagged_errors" domain="[('test_tags', '!=', False)]"/>
+          <separator/>
+          <filter string="Not seen in one month" name="not_seen_one_month" domain="[('last_seen_date','&lt;', (context_today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d'))]"/>
+        </search>
+      </field>
+    </record>
+
     <record id="open_view_build_error_tree" model="ir.actions.act_window">
-        <field name="name">Build errors</field>
-        <field name="res_model">runbot.build.error</field>
+      <field name="name">Errors</field>
+      <field name="res_model">runbot.build.error</field>
+      <field name="view_mode">tree,form</field>
+      <field name="context"></field>
+    </record>
+
+    <record id="open_view_build_error_content_tree" model="ir.actions.act_window">
+        <field name="name">Build errors contents</field>
+        <field name="res_model">runbot.build.error.content</field>
         <field name="view_mode">tree,form</field>
-        <field name="context">{'search_default_no_parent_error': True, 'search_default_random_error': True}</field>
+        <field name="context">{}</field>
     </record>
 
     <record id="build_error_regex_form" model="ir.ui.view">

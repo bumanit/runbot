@@ -30,7 +30,7 @@ def route(routes, **kw):
             keep_search = request.httprequest.cookies.get('keep_search', False) == '1'
             cookie_search = request.httprequest.cookies.get('search', '')
             refresh = kwargs.get('refresh', False)
-            nb_build_errors = request.env['runbot.build.error'].search_count([('random', '=', True), ('parent_id', '=', False)])
+            nb_build_errors = request.env['runbot.build.error'].search_count([])
             nb_assigned_errors = request.env['runbot.build.error'].search_count([('responsible', '=', request.env.user.id)])
             nb_team_errors = request.env['runbot.build.error'].search_count([('responsible', '=', False), ('team_id', 'in', request.env.user.runbot_team_ids.ids)])
             kwargs['more'] = more
@@ -459,7 +459,7 @@ class Runbot(Controller):
             ('responsible', '=', False),
             ('team_id', 'in', request.env.user.runbot_team_ids.ids)
         ], order='last_seen_date desc, build_count desc')
-        domain = [('parent_id', '=', False), ('responsible', '!=', request.env.user.id), ('build_count', '>', 1)]
+        domain = [('responsible', '!=', request.env.user.id), ('build_count', '>', 1)]
         build_errors_count = request.env['runbot.build.error'].search_count(domain)
         url_args = {}
         url_args['sort'] = sort
@@ -481,7 +481,7 @@ class Runbot(Controller):
     @route(['/runbot/teams', '/runbot/teams/<model("runbot.team"):team>',], type='http', auth='user', website=True, sitemap=False)
     def team_dashboards(self, team=None, hide_empty=False, **kwargs):
         teams = request.env['runbot.team'].search([]) if not team else None
-        domain = [('id', 'in', team.build_error_ids.ids)] if team else []
+        domain = [('id', 'in', team.assignment_ids.ids)] if team else []
 
         # Sort & Filter
         sortby = kwargs.get('sortby', 'count')
@@ -496,7 +496,7 @@ class Runbot(Controller):
             'not_one': {'label': 'Seen more than once', 'domain': [('build_count', '>', 1)]},
         }
 
-        for trigger in team.build_error_ids.trigger_ids if team else []:
+        for trigger in team.assignment_ids.trigger_ids if team else []:
             k = f'trigger_{trigger.name.lower().replace(" ", "_")}'
             searchbar_filters.update(
                 {k: {'label': f'Trigger {trigger.name}', 'domain': [('trigger_ids', '=', trigger.id)]}}
@@ -510,7 +510,7 @@ class Runbot(Controller):
         qctx = {
             'team': team,
             'teams': teams,
-            'build_error_ids': request.env['runbot.build.error'].search(domain, order=order),
+            'build_assignment_ids': request.env['runbot.build.assignment'].search(domain, order=order),
             'hide_empty': bool(hide_empty),
             'searchbar_sortings': searchbar_sortings,
             'sortby': sortby,

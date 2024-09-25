@@ -25,8 +25,8 @@
                     </tree>
                   </field>
                 </page>
-                <page string="Errors" invisible="build_error_ids == []">
-                  <field name="build_error_ids" nolabel="1" widget="many2many" options="{'not_delete': True, 'no_create': True}"/>
+                <page string="Errors" invisible="bool(assignment_ids)">
+                  <field name="assignment_ids" nolabel="1" widget="many2many" options="{'not_delete': True, 'no_create': True}"/>
                 </page>
                 <page string="Modules">
                   <field name="module_ownership_ids">
@@ -66,7 +66,7 @@
                 <field name="path_glob"/>
                 <field name="github_team"/>
                 <field name="module_ownership_ids"/>
-                <field name="build_error_ids"/>
+                <field name="assignment_ids"/>
             </tree>
         </field>
     </record>

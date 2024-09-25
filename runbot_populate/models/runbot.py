@@ -29,6 +29,7 @@ class Runbot(models.AbstractModel):
         assert expected_bundle == existing_bundle
 
         if bundles.branch_ids:
+            _logger.warning('Skipping populate, bundles already have branches')
             # only populate data if no branch are found
             return
 
@@ -114,30 +115,29 @@ class Runbot(models.AbstractModel):
                         _logger.info(command)
 
                 mock_git.side_effect = git
-                with mute_logger('odoo.addons.runbot.models.batch'):
-                    batch._process()
+                batch._prepare()
+                batch._process()
                 if i != nb_batch - 1:
                     for slot in batch.slot_ids:
                         if slot.build_id:
                             build = slot.build_id
                             with mute_logger('odoo.addons.runbot.models.build'):
-                                build._log('******','Starting step X', level='SEPARATOR')
-                                build._log('******','Some log')
+                                build._log('******', 'Starting step X', level='SEPARATOR')
+                                build._log('******', 'Some log')
                                 for config in (linting_config, security_config):
                                     child = build._add_child({'config_id': config.id})
                                     build._log('create_build', 'created with config %s' % config.name, log_type='subbuild', path=str(child.id))
                                     child.local_state = 'done'
                                     child.local_result = 'ok'
                                 child.description = "Description for security"
-                                build._log('******','Step x finished')
-                                build._log('******','Starting step Y', level='SEPARATOR')
-                                build._log('******','Some log', level='ERROR')
-                                build._log('******','Some log\n with multiple lines', level='ERROR')
-                                build._log('******','**Some** *markdown* [log](%s)', 'http://example.com', log_type='markdown')
-                                build._log('******','Step x finished', level='SEPARATOR')
-                            
+                                build._log('******', 'Step x finished')
+                                build._log('******', 'Starting step Y', level='SEPARATOR')
+                                if not bundle.sticky:
+                                    build._log('******', 'Some log', level='ERROR', log_type='server')
+                                    build._log('******', 'Some log\n with multiple lines', level='ERROR', log_type='server')
+                                build._log('******', '**Some** *markdown* [log](%s)', 'http://example.com', log_type='markdown')
+                                build._log('******', 'Step x finished', level='SEPARATOR')
                             build.local_state = 'done'
                             build.local_result = 'ok' if bundle.sticky else 'ko'
-
 
                 batch._process()
