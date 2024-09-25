@@ -19,7 +19,7 @@ class BuildErrorLink(models.Model):
     _order = 'log_date desc, build_id desc'
 
     build_id = fields.Many2one('runbot.build', required=True, index=True)
-    build_error_id =fields.Many2one('runbot.build.error', required=True, index=True, ondelete='cascade')
+    error_content_id = fields.Many2one('runbot.build.error.content', required=True, index=True, ondelete='cascade')
     log_date = fields.Datetime(string='Log date')
     host = fields.Char(related='build_id.host')
     dest = fields.Char(related='build_id.dest')
@@ -29,26 +29,58 @@ class BuildErrorLink(models.Model):
     build_url = fields.Char(related='build_id.build_url')
 
     _sql_constraints = [
-        ('error_build_rel_unique', 'UNIQUE (build_id, build_error_id)', 'A link between a build and an error must be unique'),
+        ('error_build_rel_unique', 'UNIQUE (build_id, error_content_id)', 'A link between a build and an error must be unique'),
     ]
 
 
+class BuildErrorSeenMixin(models.AbstractModel):
+    _name = 'runbot.build.error.seen.mixin'
+    _description = "Add last/firt build/log_date for error and asssignments"
+
+    first_seen_build_id = fields.Many2one('runbot.build', compute='_compute_seen', string='First Seen build', store=True)
+    first_seen_date = fields.Datetime(string='First Seen Date', compute='_compute_seen', store=True)
+    last_seen_build_id = fields.Many2one('runbot.build', compute='_compute_seen', string='Last Seen build', store=True)
+    last_seen_date = fields.Datetime(string='Last Seen Date', compute='_compute_seen', store=True)
+    build_count = fields.Integer(string='Nb Seen', compute='_compute_seen', store=True)
+
+    @api.depends('build_error_link_ids')
+    def _compute_seen(self):
+        for record in self:
+            record.first_seen_date = False
+            record.last_seen_date = False
+            record.build_count = 0
+            error_link_ids = record.build_error_link_ids.sorted('log_date')
+            if error_link_ids:
+                first_error_link = error_link_ids[0]
+                last_error_link = error_link_ids[-1]
+                record.first_seen_date = first_error_link.log_date
+                record.last_seen_date = last_error_link.log_date
+                record.first_seen_build_id = first_error_link.build_id
+                record.last_seen_build_id = last_error_link.build_id
+                record.build_count = len(error_link_ids.build_id)
+
+
+def _compute_related_error_content_ids(field_name):
+    @api.depends(f'error_content_ids.{field_name}')
+    def _compute(self):
+        for record in self:
+            record[field_name] = record.error_content_ids[field_name]
+    return _compute
+
+
 class BuildError(models.Model):
-
     _name = "runbot.build.error"
-    _description = "Build error"
+    _description = "An object to manage a group of errors log that fit together and assign them to a team"
+    _inherit = ('mail.thread', 'mail.activity.mixin', 'runbot.build.error.seen.mixin')
 
-    _inherit = ['mail.thread', 'mail.activity.mixin']
-    _rec_name = "id"
+    name = fields.Char("Name")
+    active = fields.Boolean('Open (not fixed)', default=True, tracking=True)
+    description = fields.Text("Description", store=True, compute='_compute_description')
+    content = fields.Text("Error contents", compute='_compute_content', search="_search_content")
+    error_content_ids = fields.One2many('runbot.build.error.content', 'error_id')
+    error_count = fields.Integer("Error count", store=True, compute='_compute_count')
+    previous_error_id = fields.Many2one('runbot.build.error', string="Already seen error")
 
-    content = fields.Text('Error message', required=True)
-    cleaned_content = fields.Text('Cleaned error message')
-    summary = fields.Char('Content summary', compute='_compute_summary', store=False)
-    module_name = fields.Char('Module name')  # name in ir_logging
-    file_path = fields.Char('File Path')  # path in ir logging
-    function = fields.Char('Function name')  # func name in ir logging
-    fingerprint = fields.Char('Error fingerprint', index=True)
-    random = fields.Boolean('underterministic error', tracking=True)
     responsible = fields.Many2one('res.users', 'Assigned fixer', tracking=True)
     customer = fields.Many2one('res.users', 'Customer', tracking=True)
     team_id = fields.Many2one('runbot.team', 'Assigned team', tracking=True)
@@ -56,26 +88,57 @@ class BuildError(models.Model):
     fixing_pr_id = fields.Many2one('runbot.branch', 'Fixing PR', tracking=True, domain=[('is_pr', '=', True)])
     fixing_pr_alive = fields.Boolean('Fixing PR alive', related='fixing_pr_id.alive')
     fixing_pr_url = fields.Char('Fixing PR url', related='fixing_pr_id.branch_url')
-    build_error_link_ids = fields.One2many('runbot.build.error.link', 'build_error_id')
-    children_build_error_link_ids = fields.One2many('runbot.build.error.link', compute='_compute_children_build_error_link_ids')
-    build_ids = fields.Many2many('runbot.build', compute= '_compute_build_ids')
-    bundle_ids = fields.One2many('runbot.bundle', compute='_compute_bundle_ids')
-    version_ids = fields.One2many('runbot.version', compute='_compute_version_ids', string='Versions', search='_search_version')
-    trigger_ids = fields.Many2many('runbot.trigger', compute='_compute_trigger_ids', string='Triggers', search='_search_trigger_ids')
-    active = fields.Boolean('Active (not fixed)', default=True, tracking=True)
-    tag_ids = fields.Many2many('runbot.build.error.tag', string='Tags')
-    build_count = fields.Integer(compute='_compute_build_counts', string='Nb seen', store=True)
-    parent_id = fields.Many2one('runbot.build.error', 'Linked to', index=True)
-    child_ids = fields.One2many('runbot.build.error', 'parent_id', string='Child Errors', context={'active_test': False})
-    children_build_ids = fields.Many2many('runbot.build', compute='_compute_children_build_ids', string='Children builds')
-    error_history_ids = fields.Many2many('runbot.build.error', compute='_compute_error_history_ids', string='Old errors', context={'active_test': False})
-    first_seen_build_id = fields.Many2one('runbot.build', compute='_compute_first_seen_build_id', string='First Seen build')
-    first_seen_date = fields.Datetime(string='First Seen Date', compute='_compute_seen_date', store=True)
-    last_seen_build_id = fields.Many2one('runbot.build', compute='_compute_last_seen_build_id', string='Last Seen build', store=True)
-    last_seen_date = fields.Datetime(string='Last Seen Date', compute='_compute_seen_date', store=True)
+
     test_tags = fields.Char(string='Test tags', help="Comma separated list of test_tags to use to reproduce/remove this error", tracking=True)
     tags_min_version_id = fields.Many2one('runbot.version', 'Tags Min version', help="Minimal version where the test tags will be applied.")
     tags_max_version_id = fields.Many2one('runbot.version', 'Tags Max version', help="Maximal version where the test tags will be applied.")
+
+    # Build error related data
+    build_error_link_ids = fields.Many2many('runbot.build.error.link', compute=_compute_related_error_content_ids('build_error_link_ids'))
+    unique_build_error_link_ids = fields.Many2many('runbot.build.error.link', compute='_compute_unique_build_error_link_ids')
+    build_ids = fields.Many2many('runbot.build', compute=_compute_related_error_content_ids('build_ids'))
+    bundle_ids = fields.Many2many('runbot.bundle', compute=_compute_related_error_content_ids('bundle_ids'))
+    version_ids = fields.Many2many('runbot.version', string='Versions', compute=_compute_related_error_content_ids('version_ids'))
+    trigger_ids = fields.Many2many('runbot.trigger', string='Triggers', compute=_compute_related_error_content_ids('trigger_ids'))
+    tag_ids = fields.Many2many('runbot.build.error.tag', string='Tags', compute=_compute_related_error_content_ids('tag_ids'))
+
+    random = fields.Boolean('Random', compute="_compute_random", store=True)
+
+    @api.depends('build_error_link_ids')
+    def _compute_unique_build_error_link_ids(self):
+        for record in self:
+            seen = set()
+            id_list = []
+            for error_link in record.build_error_link_ids:
+                if error_link.build_id.id not in seen:
+                    seen.add(error_link.build_id.id)
+                    id_list.append(error_link.id)
+            record.unique_build_error_link_ids = record.env['runbot.build.error.link'].browse(id_list)
+
+    @api.depends('name', 'error_content_ids')
+    def _compute_description(self):
+        for record in self:
+            record.description = record.name
+            if record.error_content_ids:
+                record.description = record.error_content_ids[0].content
+
+    def _compute_content(self):
+        for record in self:
+            record.content = '\n'.join(record.error_content_ids.mapped('content'))
+
+    def _search_content(self, operator, value):
+        return [('error_content_ids', 'any', [('content', operator, value)])]
+
+    @api.depends('error_content_ids')
+    def _compute_count(self):
+        for record in self:
+            record.error_count = len(record.error_content_ids)
+
+    @api.depends('error_content_ids')
+    def _compute_random(self):
+        for record in self:
+            record.random = any(error.random for error in record.error_content_ids)
+
 
     @api.constrains('test_tags')
     def _check_test_tags(self):
@@ -85,24 +148,16 @@ class BuildError(models.Model):
 
     @api.onchange('test_tags')
     def _onchange_test_tags(self):
-        self.tags_min_version_id = min(self.version_ids, key=lambda rec: rec.number)
-        self.tags_max_version_id = max(self.version_ids, key=lambda rec: rec.number)
+        if self.test_tags and self.version_ids:
+            self.tags_min_version_id = min(self.version_ids, key=lambda rec: rec.number)
+            self.tags_max_version_id = max(self.version_ids, key=lambda rec: rec.number)
 
     @api.onchange('customer')
     def _onchange_customer(self):
         if not self.responsible:
             self.responsible = self.customer
 
-    @api.model_create_multi
     def create(self, vals_list):
-        cleaners = self.env['runbot.error.regex'].search([('re_type', '=', 'cleaning')])
-        for vals in vals_list:
-            content = vals.get('content')
-            cleaned_content = cleaners._r_sub(content)
-            vals.update({
-                'cleaned_content': cleaned_content,
-                'fingerprint': self._digest(cleaned_content)
-            })
         records = super().create(vals_list)
         records.action_assign()
         return records
@@ -110,170 +165,35 @@ class BuildError(models.Model):
     def write(self, vals):
         if 'active' in vals:
             for build_error in self:
-                (build_error.child_ids - self).write({'active': vals['active']})
                 if not (self.env.su or self.user_has_groups('runbot.group_runbot_admin')):
                     if build_error.test_tags:
                         raise UserError("This error as a test-tag and can only be (de)activated by admin")
                     if not vals['active'] and build_error.last_seen_date + relativedelta(days=1) > fields.Datetime.now():
                         raise UserError("This error broke less than one day ago can only be deactivated by admin")
-        if 'cleaned_content' in vals:
-            vals.update({'fingerprint': self._digest(vals['cleaned_content'])})
-        result = super(BuildError, self).write(vals)
-        if vals.get('parent_id'):
-            for build_error in self:
-                parent = build_error.parent_id
-                if build_error.test_tags:
-                    if parent.test_tags and not self.env.su:
-                        raise UserError(f"Cannot parent an error with test tags: {build_error.test_tags}")
-                    elif not parent.test_tags:
-                        parent.sudo().test_tags = build_error.test_tags
-                        build_error.sudo().test_tags = False
-                if build_error.responsible:
-                    if parent.responsible and parent.responsible != build_error.responsible and not self.env.su:
-                        raise UserError(f"Error {parent.id} as already a responsible ({parent.responsible}) cannot assign {build_error.responsible}")
-                    else:
-                        parent.responsible = build_error.responsible
-                        build_error.responsible = False
-                if build_error.team_id:
-                    if not parent.team_id:
-                        parent.team_id = build_error.team_id
-                    build_error.team_id = False
-        return result
+        return super().write(vals)
 
-    @api.depends('build_error_link_ids')
-    def _compute_build_ids(self):
-        for record in self:
-            record.build_ids = record.build_error_link_ids.mapped('build_id')
-
-    @api.depends('build_error_link_ids')
-    def _compute_children_build_error_link_ids(self):
-        for record in self:
-            record.children_build_error_link_ids = record.build_error_link_ids | record.child_ids.build_error_link_ids
-
-    @api.depends('build_ids', 'child_ids.build_ids')
-    def _compute_build_counts(self):
-        for build_error in self:
-            build_error.build_count = len(build_error.build_ids | build_error.mapped('child_ids.build_ids'))
-
-    @api.depends('build_ids')
-    def _compute_bundle_ids(self):
-        for build_error in self:
-            top_parent_builds = build_error.build_ids.mapped(lambda rec: rec and rec.top_parent)
-            build_error.bundle_ids = top_parent_builds.mapped('slot_ids').mapped('batch_id.bundle_id')
-
-    @api.depends('children_build_ids')
-    def _compute_version_ids(self):
-        for build_error in self:
-            build_error.version_ids = build_error.children_build_ids.version_id 
-
-    @api.depends('children_build_ids')
-    def _compute_trigger_ids(self):
-        for build_error in self:
-            build_error.trigger_ids = build_error.children_build_ids.trigger_id
-
-    @api.depends('content')
-    def _compute_summary(self):
-        for build_error in self:
-            build_error.summary = build_error.content[:80]
-
-
-    @api.depends('build_ids', 'child_ids.build_ids')
-    def _compute_children_build_ids(self):
-        for build_error in self:
-            all_builds = build_error.build_ids | build_error.mapped('child_ids.build_ids')
-            build_error.children_build_ids = all_builds.sorted(key=lambda rec: rec.id, reverse=True)
-
-    @api.depends('children_build_ids')
-    def _compute_last_seen_build_id(self):
-        for build_error in self:
-            build_error.last_seen_build_id = build_error.children_build_ids and build_error.children_build_ids[0] or False
-
-    @api.depends('build_error_link_ids', 'child_ids.build_error_link_ids')
-    def _compute_seen_date(self):
-        for build_error in self:
-            error_dates = (build_error.build_error_link_ids | build_error.child_ids.build_error_link_ids).mapped('log_date')
-            build_error.first_seen_date = error_dates and min(error_dates)
-            build_error.last_seen_date = error_dates and max(error_dates)
-
-    @api.depends('children_build_ids')
-    def _compute_first_seen_build_id(self):
-        for build_error in self:
-            build_error.first_seen_build_id = build_error.children_build_ids and build_error.children_build_ids[-1] or False
-
-    @api.depends('fingerprint', 'child_ids.fingerprint')
-    def _compute_error_history_ids(self):
-        for error in self:
-            fingerprints = [error.fingerprint] + [rec.fingerprint for rec in error.child_ids]
-            error.error_history_ids = self.search([('fingerprint', 'in', fingerprints), ('active', '=', False), ('id', '!=', error.id or False)])
-
-    @api.model
-    def _digest(self, s):
-        """
-        return a hash 256 digest of the string s
-        """
-        return hashlib.sha256(s.encode()).hexdigest()
-
-    @api.model
-    def _parse_logs(self, ir_logs):
-        if not ir_logs:
-            return
-        regexes = self.env['runbot.error.regex'].search([])
-        search_regs = regexes.filtered(lambda r: r.re_type == 'filter')
-        cleaning_regs = regexes.filtered(lambda r: r.re_type == 'cleaning')
-
-        hash_dict = defaultdict(self.env['ir.logging'].browse)
-        for log in ir_logs:
-            if search_regs._r_search(log.message):
-                continue
-            fingerprint = self._digest(cleaning_regs._r_sub(log.message))
-            hash_dict[fingerprint] |= log
-
-        build_errors = self.env['runbot.build.error']
-        # add build ids to already detected errors
-        existing_errors = self.env['runbot.build.error'].search([('fingerprint', 'in', list(hash_dict.keys())), ('active', '=', True)])
-        existing_fingerprints = existing_errors.mapped('fingerprint')
-        build_errors |= existing_errors
-        for build_error in existing_errors:
-            logs = hash_dict[build_error.fingerprint]
-            # update filepath if it changed. This is optionnal and mainly there in case we adapt the OdooRunner log 
-            if logs[0].path != build_error.file_path:
-                build_error.file_path = logs[0].path
-                build_error.function = logs[0].func
-
-        # create an error for the remaining entries
-        for fingerprint, logs in hash_dict.items():
-            if fingerprint in existing_fingerprints:
-                continue
-            new_build_error = self.env['runbot.build.error'].create({
-                'content': logs[0].message,
-                'module_name': logs[0].name.removeprefix('odoo.').removeprefix('addons.'),
-                'file_path': logs[0].path,
-                'function': logs[0].func,
-            })
-            build_errors |= new_build_error
-            existing_fingerprints.append(fingerprint)
-
-        for build_error in build_errors:
-            logs = hash_dict[build_error.fingerprint]
-            for rec in logs:
-                if rec.build_id not in build_error.build_error_link_ids.build_id:
-                    self.env['runbot.build.error.link'].create({
-                        'build_id': rec.build_id.id,
-                        'build_error_id': build_error.id,
-                        'log_date': rec.create_date
-                    })
-
-        if build_errors:
-            window_action = {
-                "type": "ir.actions.act_window",
-                "res_model": "runbot.build.error",
-                "views": [[False, "tree"]],
-                "domain": [('id', 'in', build_errors.ids)]
-            }
-            if len(build_errors) == 1:
-                window_action["views"] = [[False, "form"]]
-                window_action["res_id"] = build_errors.id
-            return window_action
+    def _merge(self, others):
+        self.ensure_one
+        error = self
+        for previous_error in others:
+            # todo, check that all relevant fields are checked and transfered/logged
+            if previous_error.test_tags and error.test_tags != previous_error.test_tags:
+                if previous_error.test_tags and not self.env.su:
+                    raise UserError(f"Cannot merge an error with test tags: {previous_error.test_tags}")
+                elif not error.test_tags:
+                    error.sudo().test_tags = previous_error.test_tags
+                    previous_error.sudo().test_tags = False
+            if previous_error.responsible:
+                if error.responsible and error.responsible != previous_error.responsible and not self.env.su:
+                    raise UserError(f"error {error.id} as already a responsible ({error.responsible}) cannot assign {previous_error.responsible}")
+                else:
+                    error.responsible = previous_error.responsible
+            if previous_error.team_id:
+                if not error.team_id:
+                    error.team_id = previous_error.team_id
+            previous_error.error_content_ids.write({'error_id': self})
+            if not previous_error.test_tags:
+                previous_error.active = False
 
     @api.model
     def _test_tags_list(self, build_id=False):
@@ -293,6 +213,224 @@ class BuildError(models.Model):
     def _disabling_tags(self, build_id=False):
         return ['-%s' % tag for tag in self._test_tags_list(build_id)]
 
+    def _get_form_url(self):
+        self.ensure_one()
+        return url_join(self.get_base_url(), f'/web#id={self.id}&model=runbot.build.error&view_type=form')
+
+    def _get_form_link(self):
+        self.ensure_one()
+        return Markup('<a href="%s">%s</a>') % (self._get_form_url(), self.id)
+
+    def action_view_errors(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'views': [(False, 'tree'), (False, 'form')],
+            'res_model': 'runbot.build.error.content',
+            'domain': [('error_id', '=', self.id)],
+            'context': {'active_test': False},
+            'target': 'current',
+        }
+
+    def action_assign(self):
+        teams = None
+        repos = None
+        for record in self:
+            if not record.responsible and not record.team_id:
+                for error_content in record.error_content_ids:
+                    if error_content.file_path:
+                        if teams is None:
+                            teams = self.env['runbot.team'].search(['|', ('path_glob', '!=', False), ('module_ownership_ids', '!=', False)])
+                            repos = self.env['runbot.repo'].search([])
+                        team = teams._get_team(error_content.file_path, repos)
+                        if team:
+                            record.team_id = team
+                            break
+
+    @api.model
+    def _parse_logs(self, ir_logs):
+        if not ir_logs:
+            return
+        regexes = self.env['runbot.error.regex'].search([])
+        search_regs = regexes.filtered(lambda r: r.re_type == 'filter')
+        cleaning_regs = regexes.filtered(lambda r: r.re_type == 'cleaning')
+
+        hash_dict = defaultdict(self.env['ir.logging'].browse)
+        for log in ir_logs:
+            if search_regs._r_search(log.message):
+                continue
+            fingerprint = self.env['runbot.build.error.content']._digest(cleaning_regs._r_sub(log.message))
+            hash_dict[fingerprint] |= log
+
+        build_error_contents = self.env['runbot.build.error.content']
+        # add build ids to already detected errors
+        existing_errors_contents = self.env['runbot.build.error.content'].search([('fingerprint', 'in', list(hash_dict.keys())), ('error_id.active', '=', True)])
+        existing_fingerprints = existing_errors_contents.mapped('fingerprint')
+        build_error_contents |= existing_errors_contents
+        # for build_error_content in existing_errors_contents:
+        #     logs = hash_dict[build_error_content.fingerprint]
+        #     # update filepath if it changed. This is optionnal and mainly there in case we adapt the OdooRunner log
+        #     if logs[0].path != build_error_content.file_path:
+        #         build_error_content.file_path = logs[0].path
+        #     build_error_content.function = logs[0].func
+
+        # create an error for the remaining entries
+        for fingerprint, logs in hash_dict.items():
+            if fingerprint in existing_fingerprints:
+                continue
+            new_build_error_content = self.env['runbot.build.error.content'].create({
+                'content': logs[0].message,
+                'module_name': logs[0].name.removeprefix('odoo.').removeprefix('addons.'),
+                'file_path': logs[0].path,
+                'function': logs[0].func,
+            })
+            build_error_contents |= new_build_error_content
+            existing_fingerprints.append(fingerprint)
+
+        for build_error_content in build_error_contents:
+            logs = hash_dict[build_error_content.fingerprint]
+            for rec in logs:
+                if rec.build_id not in build_error_content.build_ids:
+                    self.env['runbot.build.error.link'].create({
+                        'build_id': rec.build_id.id,
+                        'error_content_id': build_error_content.id,
+                        'log_date': rec.create_date,
+                    })
+
+        if build_error_contents:
+            window_action = {
+                "type": "ir.actions.act_window",
+                "res_model": "runbot.build.error",
+                "views": [[False, "tree"]],
+                "domain": [('id', 'in', build_error_contents.ids)]
+            }
+            if len(build_error_contents) == 1:
+                window_action["views"] = [[False, "form"]]
+                window_action["res_id"] = build_error_contents.id
+            return window_action
+
+    def action_link_errors(self):
+        if len(self) < 2:
+            return
+        # sort self so that the first one is the one that has test tags or responsible, or the oldest.
+        self_sorted = self.sorted(lambda error: (not error.test_tags, not error.responsible, error.error_count, error.id))
+        base_error = self_sorted[0]
+        base_error._merge(self_sorted - base_error)
+
+
+class BuildErrorContent(models.Model):
+
+    _name = 'runbot.build.error.content'
+    _description = "Build error log"
+
+    _inherit = ('mail.thread', 'mail.activity.mixin', 'runbot.build.error.seen.mixin')
+    _rec_name = "id"
+
+    error_id = fields.Many2one('runbot.build.error', 'Linked to', index=True, required=True)
+    content = fields.Text('Error message', required=True)
+    cleaned_content = fields.Text('Cleaned error message')
+    summary = fields.Char('Content summary', compute='_compute_summary', store=False)
+    module_name = fields.Char('Module name')  # name in ir_logging
+    file_path = fields.Char('File Path')  # path in ir logging
+    function = fields.Char('Function name')  # func name in ir logging
+    fingerprint = fields.Char('Error fingerprint', index=True)
+    random = fields.Boolean('underterministic error', tracking=True)
+    build_error_link_ids = fields.One2many('runbot.build.error.link', 'error_content_id')
+
+    build_ids = fields.Many2many('runbot.build', compute='_compute_build_ids')
+    bundle_ids = fields.One2many('runbot.bundle', compute='_compute_bundle_ids')
+    version_ids = fields.One2many('runbot.version', compute='_compute_version_ids', string='Versions', search='_search_version')
+    trigger_ids = fields.Many2many('runbot.trigger', compute='_compute_trigger_ids', string='Triggers', search='_search_trigger_ids')
+    tag_ids = fields.Many2many('runbot.build.error.tag', string='Tags')
+
+    responsible = fields.Many2one(related='error_id.responsible')
+    customer = fields.Many2one(related='error_id.customer')
+    team_id = fields.Many2one(related='error_id.team_id')
+    fixing_commit = fields.Char(related='error_id.fixing_commit')
+    fixing_pr_id = fields.Many2one(related='error_id.fixing_pr_id')
+    fixing_pr_alive = fields.Boolean(related='error_id.fixing_pr_alive')
+    fixing_pr_url = fields.Char(related='error_id.fixing_pr_url')
+    test_tags = fields.Char(related='error_id.test_tags')
+    tags_min_version_id = fields.Many2one(related='error_id.tags_min_version_id')
+    tags_max_version_id = fields.Many2one(related='error_id.tags_max_version_id')
+
+    def _set_error_history(self):
+        for error_content in self:
+            if not error_content.error_id.previous_error_id:
+                previous_error_content = error_content.search([
+                    ('fingerprint', '=', error_content.fingerprint),
+                    ('error_id.active', '=', False),
+                    ('id', '!=', error_content.id or False),
+                ])
+                if previous_error_content and previous_error_content != error_content.error_id:
+                    error_content.error_id.message_post(body=f"An historical error was found for error {error_content.id}: {previous_error_content.id}")
+                    error_content.error_id.previous_error_id = previous_error_content.error_id
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        cleaners = self.env['runbot.error.regex'].search([('re_type', '=', 'cleaning')])
+        for vals in vals_list:
+            if not vals.get('error_id'):
+                # TODO, try to find an existing one that could match, will be done in another pr
+                name = vals.get('content', '').split('\n')[0][:1000]
+                error = self.env['runbot.build.error'].create({
+                    'name': name,
+                })
+                vals['error_id'] = error.id
+            content = vals.get('content')
+            cleaned_content = cleaners._r_sub(content)
+            vals.update({
+                'cleaned_content': cleaned_content,
+                'fingerprint': self._digest(cleaned_content)
+            })
+        records = super().create(vals_list)
+        records._set_error_history()
+        records.error_id.action_assign()
+        return records
+
+    def write(self, vals):
+        if 'cleaned_content' in vals:
+            vals.update({'fingerprint': self._digest(vals['cleaned_content'])})
+        initial_errors = self.mapped('error_id')
+        result = super().write(vals)
+        if vals.get('error_id'):
+            for build_error, previous_error in zip(self, initial_errors):
+                if not previous_error.error_content_ids:
+                    build_error.error_id._merge(previous_error)
+        return result
+
+    @api.depends('build_error_link_ids')
+    def _compute_build_ids(self):
+        for record in self:
+            record.build_ids = record.build_error_link_ids.mapped('build_id').sorted('id')
+
+    @api.depends('build_ids')
+    def _compute_bundle_ids(self):
+        for build_error in self:
+            top_parent_builds = build_error.build_ids.mapped(lambda rec: rec and rec.top_parent)
+            build_error.bundle_ids = top_parent_builds.mapped('slot_ids').mapped('batch_id.bundle_id')
+
+    @api.depends('build_ids')
+    def _compute_version_ids(self):
+        for build_error in self:
+            build_error.version_ids = build_error.build_ids.version_id
+
+    @api.depends('build_ids')
+    def _compute_trigger_ids(self):
+        for build_error in self:
+            build_error.trigger_ids = build_error.build_ids.trigger_id
+
+    @api.depends('content')
+    def _compute_summary(self):
+        for build_error in self:
+            build_error.summary = build_error.content[:80]
+
+    @api.model
+    def _digest(self, s):
+        """
+        return a hash 256 digest of the string s
+        """
+        return hashlib.sha256(s.encode()).hexdigest()
+
     def _search_version(self, operator, value):
         exclude_domain = []
         if operator == '=':
@@ -303,93 +441,63 @@ class BuildError(models.Model):
     def _search_trigger_ids(self, operator, value):
         return [('build_error_link_ids.trigger_id', operator, value)]
 
-    def _get_form_url(self):
-        self.ensure_one()
-        return url_join(self.get_base_url(), f'/web#id={self.id}&model=runbot.build.error&view_type=form')
-
-    def _get_form_link(self):
-        self.ensure_one()
-        return Markup(f'<a href="%s">%s</a>') % (self._get_form_url(), self.id)
-
     def _merge(self):
         if len(self) < 2:
             return
         _logger.debug('Merging errors %s', self)
-        base_error = self[0]
-        base_linked = self[0].parent_id or self[0]
-        for error in self[1:]:
-            assert base_error.fingerprint == error.fingerprint, f'Errors {base_error.id} and {error.id} have a different fingerprint'
-            if error.test_tags and not base_linked.test_tags:
-                base_linked.test_tags = error.test_tags
-                if not base_linked.active and error.active:
-                    base_linked.active = True
-                base_error.message_post(body=Markup('⚠ test-tags inherited from error %s') % error._get_form_link())
-            elif base_linked.test_tags and error.test_tags and base_linked.test_tags != error.test_tags:
-                base_error.message_post(body=Markup('⚠ trying to merge errors with different test-tags from %s tag: "%s"') % (error._get_form_link(), error.test_tags))
-                error.message_post(body=Markup('⚠ trying to merge errors with different test-tags from %s tag: "%s"') % (base_error._get_form_link(), base_error.test_tags))
-                continue
-
-            for build_error_link in error.build_error_link_ids:
-                if build_error_link.build_id not in base_error.build_error_link_ids.build_id:
-                    build_error_link.build_error_id = base_error
+        base_error_content = self[0]
+        base_error = base_error_content.error_id
+        errors = self.env['runbot.build.error']
+        for error_content in self[1:]:
+            assert base_error_content.fingerprint == error_content.fingerprint, f'Errors {base_error_content.id} and {error_content.id} have a different fingerprint'
+            for build_error_link in error_content.build_error_link_ids:
+                if build_error_link.build_id not in base_error_content.build_error_link_ids.build_id:
+                    build_error_link.error_content_id = base_error_content
                 else:
                     # as the relation already exists and was not transferred we can remove the old one
                     build_error_link.unlink()
-
-            if error.responsible and not base_linked.responsible:
-                base_error.responsible = error.responsible
-            elif base_linked.responsible and error.responsible and base_linked.responsible != error.responsible:
-                base_linked.message_post(body=Markup('⚠ responsible in merged error %s was "%s" and different from this one') % (error._get_form_link(), error.responsible.name))
-
-            if error.team_id and not base_error.team_id:
-                base_error.team_id = error.team_id
-
-            base_error.message_post(body=Markup('Error %s was merged into this one') % error._get_form_link())
-            error.message_post(body=Markup('Error was merged into %s') % base_linked._get_form_link())
-            error.child_ids.parent_id = base_error
-            error.active = False
+            if error_content.error_id != base_error_content.error_id:
+                base_error.message_post(body=Markup('Error content coming from %s was merged into this one') % error_content.error_id._get_form_link())
+                if not base_error.active and error_content.error_id.active:
+                    base_error.active = True
+            errors |= error_content.error_id
+            error_content.unlink()
+        for error in errors:
+            error.message_post(body=Markup('Some error contents from this error where merged into %s') % base_error._get_form_link())
+            if not error.error_content_ids:
+                base_error._merge(error)
 
     ####################
     #   Actions
     ####################
 
-    def action_link_errors(self):
+    def action_link_errors_contents(self):
         """ Link errors with the first one of the recordset
         choosing parent in error with responsible, random bug and finally fisrt seen
         """
         if len(self) < 2:
             return
-        self = self.with_context(active_test=False)
-        build_errors = self.search([('id', 'in', self.ids)], order='responsible asc, random desc, id asc')
-        build_errors[1:].write({'parent_id': build_errors[0].id})
+        # sort self so that the first one is the one that has test tags or responsible, or the oldest.
+        self_sorted = self.sorted(lambda ec: (not ec.error_id.test_tags, not ec.error_id.responsible, ec.error_id.error_count, ec.id))
+        base_error = self_sorted[0].error_id
+        base_error._merge(self_sorted.error_id - base_error)
 
     def action_clean_content(self):
-        _logger.info('Cleaning %s build errors', len(self))
+        _logger.info('Cleaning %s build errorscontent', len(self))
         cleaning_regs = self.env['runbot.error.regex'].search([('re_type', '=', 'cleaning')])
 
         changed_fingerprints = set()
-        for build_error in self:
-            fingerprint_before = build_error.fingerprint
-            build_error.cleaned_content = cleaning_regs._r_sub(build_error.content)
-            if fingerprint_before != build_error.fingerprint:
-                changed_fingerprints.add(build_error.fingerprint)
+        for build_error_content in self:
+            fingerprint_before = build_error_content.fingerprint
+            build_error_content.cleaned_content = cleaning_regs._r_sub(build_error_content.content)
+            if fingerprint_before != build_error_content.fingerprint:
+                changed_fingerprints.add(build_error_content.fingerprint)
 
         # merge identical errors
-        errors_by_fingerprint = self.env['runbot.build.error'].search([('fingerprint', 'in', list(changed_fingerprints))])
+        errors_content_by_fingerprint = self.env['runbot.build.error.content'].search([('fingerprint', 'in', list(changed_fingerprints))])
         for fingerprint in changed_fingerprints:
-            errors_to_merge = errors_by_fingerprint.filtered(lambda r: r.fingerprint == fingerprint)
-            errors_to_merge._merge()
-
-    def action_assign(self):
-        if not any((not record.responsible and not record.team_id and record.file_path and not record.parent_id) for record in self):
-            return
-        teams = self.env['runbot.team'].search(['|', ('path_glob', '!=', False), ('module_ownership_ids', '!=', False)])
-        repos = self.env['runbot.repo'].search([])
-        for record in self:
-            if not record.responsible and not record.team_id and record.file_path and not record.parent_id:
-                team = teams._get_team(record.file_path, repos)
-                if team:
-                    record.team_id = team
+            errors_content_to_merge = errors_content_by_fingerprint.filtered(lambda r: r.fingerprint == fingerprint)
+            errors_content_to_merge._merge()
 
 
 class BuildErrorTag(models.Model):
@@ -398,7 +506,7 @@ class BuildErrorTag(models.Model):
     _description = "Build error tag"
 
     name = fields.Char('Tag')
-    error_ids = fields.Many2many('runbot.build.error', string='Errors')
+    error_content_ids = fields.Many2many('runbot.build.error.content', string='Errors')
 
 
 class ErrorRegex(models.Model):

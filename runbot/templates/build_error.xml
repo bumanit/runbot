@@ -7,8 +7,7 @@
           <div class="card-header">
             <div class="row">
               <div class="col">Last seen date</div>
-              <div class="col col-md-3">Module</div>
-              <div class="col col-md-5">Summary</div>
+              <div class="col col-md-8">Summary</div>
               <div class="col">Triggers</div>
               <div class="col">Assigned to</div>
               <div class="col">&amp;nbsp;</div>
@@ -20,10 +19,9 @@
             <div class="card-header">
               <div class="row">
                 <div class="col"><t t-esc="build_error.last_seen_date" t-options='{"widget": "datetime"}'/></div>
-                <div class="col col-md-3"><t t-esc="build_error.module_name"/></div>
-                <div class="col col-md-5">
+                <div class="col col-md-8">
                   <button class="btn accordion-button collapsed" type="button" data-bs-toggle="collapse" t-attf-data-bs-target="#collapse{{build_error.id}}" aria-expanded="true" aria-controls="collapseOne">
-                    <code><t t-esc="build_error.summary"/></code>
+                    <code><t t-esc="build_error.name"/></code>
                   </button>
                 </div>
                 <div class="col">
@@ -125,14 +123,14 @@
                 </t>
               </div>
               <div class="d-flex">
-                <h3 t-if="build_error_ids">Team assigned Errors</h3>
+                <h3 t-if="assignment_ids">Team assigned Errors</h3>
                 <t t-call="portal.portal_searchbar">
                   <t t-set="classes" t-valuef="o_runbot_team_searchbar border-0"/>
                   <t t-set="title">&amp;nbsp;</t>
                 </t>
               </div>
               <t t-call="runbot.build_error_cards">
-                <t t-set="build_errors" t-value="build_error_ids"/>
+                <t t-set="build_errors" t-value="assignment_ids"/>
                 <t t-set="accordion_id">team_errors</t>
               </t>
             </div>

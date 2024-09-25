@@ -27,7 +27,7 @@ class RunbotTeam(models.Model):
     organisation = fields.Char('organisation', related="project_id.organisation")
     user_ids = fields.Many2many('res.users', string='Team Members', domain=[('share', '=', False)])
     dashboard_id = fields.Many2one('runbot.dashboard', string='Dashboard')
-    build_error_ids = fields.One2many('runbot.build.error', 'team_id', string='Team Errors', domain=[('parent_id', '=', False)])
+    assignment_ids = fields.One2many('runbot.build.error', 'team_id', string='Team Errors')
     path_glob = fields.Char(
         'Module Wildcards',
         help='Comma separated list of `fnmatch` wildcards used to assign errors automaticaly\n'
