@@ -2048,7 +2048,7 @@ class Stagings(models.Model):
     active = fields.Boolean(default=True)
 
     staged_at = fields.Datetime(default=fields.Datetime.now, index=True)
-    staging_end = fields.Datetime(store=True, compute='_compute_state')
+    staging_end = fields.Datetime(store=True)
     staging_duration = fields.Float(compute='_compute_duration')
     timeout_limit = fields.Datetime(store=True, compute='_compute_timeout_limit')
     reason = fields.Text("Reason for final state (if any)")
