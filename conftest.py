@@ -773,19 +773,20 @@ class Repo:
             parents=[p['sha'] for p in gh_commit['parents']],
         )
 
-    def read_tree(self, commit):
+    def read_tree(self, commit: Commit, *, recursive=False) -> dict[str, str]:
         """ read tree object from commit
-
-        :param Commit commit:
-        :rtype: Dict[str, str]
         """
-        r = self._session.get('https://api.github.com/repos/{}/git/trees/{}'.format(self.name, commit.tree))
+        r = self._session.get(
+            'https://api.github.com/repos/{}/git/trees/{}'.format(self.name, commit.tree),
+            params={'recursive': '1'} if recursive else None,
+        )
         assert 200 <= r.status_code < 300, r.text
 
         # read tree's blobs
         tree = {}
         for t in r.json()['tree']:
-            assert t['type'] == 'blob', "we're *not* doing recursive trees in test cases"
+            if t['type'] != 'blob':
+                continue # only keep blobs
             r = self._session.get('https://api.github.com/repos/{}/git/blobs/{}'.format(self.name, t['sha']))
             assert 200 <= r.status_code < 300, r.text
             tree[t['path']] = base64.b64decode(r.json()['content']).decode()
