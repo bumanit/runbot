@@ -346,7 +346,7 @@ class PullRequests(models.Model):
                 '--merge-base', commits[0]['parents'][0]['sha'],
                 target_branch.name,
                 root.head,
-            )
+            ).stdout.decode().splitlines(keepends=False)[0]
             # if there was a single commit, reuse its message when committing
             # the conflict
             if len(commits) == 1:
@@ -362,10 +362,28 @@ stderr:
 {err}
 """
 
+            # if a file is modified by the original PR and added by the forward
+            # port / conflict it's a modify/delete conflict: the file was
+            # deleted in the target branch, and the update (modify) in the
+            # original PR causes it to be added back
+            original_modified = set(conf.diff(
+                "--diff-filter=M", "--name-only",
+                "--merge-base", root.target.name,
+                root.head,
+            ).stdout.decode().splitlines(keepends=False))
+            conflict_added = set(conf.diff(
+                "--diff-filter=A", "--name-only",
+                target_branch.name,
+                tree,
+            ).stdout.decode().splitlines(keepends=False))
+            if modify_delete := (conflict_added & original_modified):
+                # rewrite the tree with conflict markers added to modify/deleted blobs
+                tree = conf.modify_delete(tree, modify_delete)
+
             target_head = source.stdout().rev_parse(f"refs/heads/{target_branch.name}")\
                 .stdout.decode().strip()
             commit = conf.commit_tree(
-                tree=tree.stdout.decode().splitlines(keepends=False)[0],
+                tree=tree,
                 parents=[target_head],
                 message=str(msg),
                 author=author,

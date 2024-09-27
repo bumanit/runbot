@@ -6,7 +6,8 @@ import pathlib
 import resource
 import stat
 import subprocess
-from typing import Optional, TypeVar, Union, Sequence, Tuple, Dict
+from operator import methodcaller
+from typing import Optional, TypeVar, Union, Sequence, Tuple, Dict, Iterable
 
 from odoo.tools.appdirs import user_cache_dir
 from .github import MergeError, PrCommit
@@ -244,6 +245,47 @@ class Repo:
             '-F', '-',
             *itertools.chain.from_iterable(('-p', p) for p in parents),
         )
+
+
+    def modify_delete(self, tree: str, files: Iterable[str]) -> str:
+        """Updates ``files`` in ``tree`` to add conflict markers to show them
+        as being modify/delete-ed, rather than have only the original content.
+
+        This is because having just content in a valid file is easy to miss,
+        causing file resurrections as they get committed rather than re-removed.
+
+        TODO: maybe extract the diff information compared to before they were removed? idk
+        """
+        # FIXME: either ignore or process binary files somehow (how does git show conflicts in binary files?)
+        repo = self.stdout().with_config(stderr=None, text=True, check=False, encoding="utf-8")
+        for f in files:
+            contents = repo.cat_file("-p", f"{tree}:{f}").stdout
+            # decorate the contents as if HEAD and BASE are empty
+            oid = repo\
+                .with_config(input=f"""\
+<<<\x3c<<< HEAD
+||||||| MERGE BASE
+=======
+{contents}
+>>>\x3e>>> FORWARD PORTED
+""")\
+                .hash_object("-w", "--stdin", "--path", f)\
+                .stdout.strip()
+
+            # we need to rewrite every tree from the parent of `f`
+            while f:
+                f, _, local = f.rpartition("/")
+                # tree to update, `{tree}:` works as an alias for tree
+                lstree = repo.ls_tree(f"{tree}:{f}").stdout.splitlines(keepends=False)
+                new_tree = "".join(
+                    # tab before name is critical to the format
+                    f"{mode} {typ} {oid if name == local else sha}\t{name}\n"
+                    for mode, typ, sha, name in map(methodcaller("split", None, 3), lstree)
+                )
+                oid = repo.with_config(input=new_tree, check=True).mktree().stdout.strip()
+            tree = oid
+        return tree
+
 
 def check(p: subprocess.CompletedProcess) -> subprocess.CompletedProcess:
     if not p.returncode:
