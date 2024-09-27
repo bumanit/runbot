@@ -477,6 +477,7 @@ class IrCron(models.Model):
         (mod / '__manifest__.py').write_text(pprint.pformat({
             'name': 'dummy saas_worker',
             'version': '1.0',
+            'license': 'BSD-0-Clause',
         }), encoding='utf-8')
         (mod / 'util.py').write_text("""\
 def from_role(*_, **__):
