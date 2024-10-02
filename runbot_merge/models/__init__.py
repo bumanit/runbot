@@ -4,6 +4,7 @@ from . import res_partner
 from . import project
 from . import pull_requests
 from . import batch
+from . import patcher
 from . import project_freeze
 from . import stagings_create
 from . import staging_cancel

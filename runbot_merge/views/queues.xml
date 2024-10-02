@@ -81,17 +81,82 @@
         </field>
     </record>
 
-    <menuitem name="Queues" id="menu_queues" parent="runbot_merge_menu"/>
+    <record id="action_patches" model="ir.actions.act_window">
+        <field name="name">Patches</field>
+        <field name="res_model">runbot_merge.patch</field>
+    </record>
+    <record id="search_patch" model="ir.ui.view">
+        <field name="name">Patches Search</field>
+        <field name="model">runbot_merge.patch</field>
+        <field name="arch" type="xml">
+            <search>
+                <filter string="Inactive" name="active" domain="[('active', '=', False)]"/>
+                <field name="target"/>
+                <field name="repository"/>
+            </search>
+        </field>
+    </record>
+    <record id="tree_patch" model="ir.ui.view">
+        <field name="name">Patches List</field>
+        <field name="model">runbot_merge.patch</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="id"/>
+                <field name="repository"/>
+                <field name="target"/>
+            </tree>
+        </field>
+    </record>
+    <record id="form_patch" model="ir.ui.view">
+        <field name="name">Patches Form</field>
+        <field name="model">runbot_merge.patch</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="repository"/>
+                            <field name="target"/>
+                        </group>
+                        <group>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                    <group attrs="{'invisible': [
+                        ('commit', '=', False),
+                        ('patch', '!=', False),
+                    ]}">
+                        <group colspan="4">
+                            <field name="commit"/>
+                        </group>
+                    </group>
+                    <group attrs="{'invisible': [
+                        ('patch', '=', False),
+                        ('commit', '!=', False),
+                    ]}">
+                        <group colspan="4">
+                            <field name="format" colspan="4"/>
+                            <field name="patch" widget="ace"/>
+                                <!-- no diff/patch mode support -->
+                                <!-- options="{'mode': 'patch'}"/> -->
+                            <field name="message" colspan="4"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <menuitem name="Queues" id="menu_queues" parent="runbot_merge_menu">
         <menuitem name="Splits" id="menu_queues_splits"
-                  parent="menu_queues"
                   action="action_splits"/>
         <menuitem name="Feedback" id="menu_queues_feedback"
-                  parent="menu_queues"
                   action="action_feedback"/>
         <menuitem name="Tagging" id="menu_queues_tagging"
-                  parent="menu_queues"
                   action="action_tagging"/>
         <menuitem name="Fetches" id="menu_fetches"
-                  parent="menu_queues"
                   action="action_fetches"/>
+        <menuitem name="Patches" id="menu_patches"
+                  action="action_patches"/>
+    </menuitem>
 </odoo>

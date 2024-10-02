@@ -810,6 +810,11 @@ class Repo:
         r = self._session.patch('https://api.github.com/repos/{}/git/refs/{}'.format(self.name, name), json={'sha': commit, 'force': force})
         assert r.ok, r.text
 
+    def delete_ref(self, name):
+        assert self.hook
+        r = self._session.delete(f'https://api.github.com/repos/{self.name}/git/refs/{name}')
+        assert r.ok, r.text
+
     def protect(self, branch):
         assert self.hook
         r = self._session.put('https://api.github.com/repos/{}/branches/{}/protection'.format(self.name, branch), json={
@@ -1244,13 +1249,27 @@ class LabelsProxy(collections.abc.MutableSet):
 
 class Environment:
     def __init__(self, port, db):
-        self._uid = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/common'.format(port)).authenticate(db, 'admin', 'admin', {})
-        self._object = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/object'.format(port))
+        self._port = port
         self._db = db
+        self._uid = None
+        self._password = None
+        self._object = xmlrpc.client.ServerProxy(f'http://localhost:{port}/xmlrpc/2/object')
+        self.login('admin', 'admin')
+
+    def with_user(self, login, password):
+        env = copy.copy(self)
+        env.login(login, password)
+        return env
+
+    def login(self, login, password):
+        self._password = password
+        self._uid = xmlrpc.client.ServerProxy(
+            f'http://localhost:{self._port}/xmlrpc/2/common'
+        ).authenticate(self._db, login, password, {})
 
     def __call__(self, model, method, *args, **kwargs):
         return self._object.execute_kw(
-            self._db, self._uid, 'admin',
+            self._db, self._uid, self._password,
             model, method,
             args, kwargs
         )
