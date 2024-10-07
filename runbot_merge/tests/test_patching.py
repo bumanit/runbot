@@ -2,7 +2,7 @@ import xmlrpc.client
 
 import pytest
 
-from utils import Commit
+from utils import Commit, read_tracking_value
 
 # basic udiff / show style patch, updates `b` from `1` to `2`
 BASIC_UDIFF = """\
@@ -22,22 +22,6 @@ index 000000000000..000000000000 100644
 -1
 +2
 """
-
-FIELD_MAPPING = {
-    'boolean': ('old_value_integer', 'new_value_integer'),
-    'date': ('old_value_datetime', 'new_value_datetime'),
-    'datetime': ('old_value_datetime', 'new_value_datetime'),
-    'char': ('old_value_char', 'new_value_char'),
-    'float': ('old_value_float', 'new_value_float'),
-    'integer': ('old_value_integer', 'new_value_integer'),
-    'monetary': ('old_value_float', 'new_value_float'),
-    'text': ('old_value_text', 'new_value_text'),
-}
-def read_tracking_value(tv):
-    field_id = tv.field_id if 'field_id' in tv else tv.field
-    field_type = field_id.field_type if 'field_type' in field_id else field_id.ttype
-    old_field_name, new_field_name = FIELD_MAPPING[field_type]
-    return field_id.name, tv[old_field_name], tv[new_field_name]
 
 
 @pytest.fixture(autouse=True)

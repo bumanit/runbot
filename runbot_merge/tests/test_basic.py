@@ -11,7 +11,8 @@ import requests
 from lxml import html
 
 import odoo
-from utils import _simple_init, seen, matches, get_partner, Commit, pr_page, to_pr, part_of, ensure_one
+from utils import _simple_init, seen, matches, get_partner, Commit, pr_page, to_pr, part_of, ensure_one, read_tracking_value
+
 
 @pytest.fixture(autouse=True)
 def _configure_statuses(request, project, repo):
@@ -157,31 +158,29 @@ def test_trivial_flow(env, repo, page, users, config):
 
     # reverse because the messages are in newest-to-oldest by default
     # (as that's how you want to read them)
-    messages = reversed([
-        (m.author_id.display_name, m.body, list(zip(
-            m.tracking_value_ids.get_old_display_value(),
-            m.tracking_value_ids.get_new_display_value(),
-        )))
-        for m in pr_id.message_ids
-    ])
+    messages = pr_id.message_ids[::-1].mapped(lambda m: (
+        m.author_id.display_name,
+        m.body,
+        list(map(read_tracking_value, m.tracking_value_ids)),
+    ))
 
     assert list(messages) == [
         (users['user'], '<p>Pull Request created</p>', []),
-        (users['user'], '', [(c1, c2)]),
-        ('OdooBot', f'<p>statuses changed on {c2}</p>', [('Opened', 'Validated')]),
+        (users['user'], '', [('head', c1, c2)]),
+        ('OdooBot', f'<p>statuses changed on {c2}</p>', [('state', 'Opened', 'Validated')]),
         # reviewer approved changing the state and setting reviewer as reviewer
         # plus set merge method
         ('Reviewer', '', [
-            ('Validated', 'Ready'),
-            ('', 'rebase and merge, using the PR as merge commit message'),
-            ('', 'Reviewer'),
+            ('state', 'Validated', 'Ready'),
+            ('merge_method', '', 'rebase and merge, using the PR as merge commit message'),
+            ('reviewed_by', '', 'Reviewer'),
         ]),
         # staging succeeded
         (matches('$$'), f'<p>staging {st.id} succeeded</p>', [
             # set merge date
-            (False, pr_id.merge_date + 'Z'),
+            ('merge_date', False, pr_id.merge_date),
             # updated state
-            ('Ready', 'Merged'),
+            ('state', 'Ready', 'Merged'),
         ]),
     ]
 

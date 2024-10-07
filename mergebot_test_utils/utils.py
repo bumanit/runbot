@@ -3,6 +3,7 @@ import contextlib
 import itertools
 import re
 import time
+import typing
 
 from lxml import html
 
@@ -214,3 +215,17 @@ def prevent_unstaging(st) -> None:
         yield
     finally:
         st.active = True
+
+
+TYPE_MAPPING = {
+    'boolean': 'integer',
+    'date': 'datetime',
+    'monetary': 'float',
+    'selection': 'char',
+    'many2one': 'char',
+}
+def read_tracking_value(tv) -> tuple[str, typing.Any, typing.Any]:
+    field_id = tv.field_id if 'field_id' in tv else tv.field
+    field_type = field_id.field_type if 'field_type' in field_id else field_id.ttype
+    t = TYPE_MAPPING.get(field_type) or field_type
+    return field_id.name, tv[f"old_value_{t}"], tv[f"new_value_{t}"]
