@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import sentry_sdk
 import werkzeug.exceptions
@@ -294,6 +294,12 @@ def handle_pr(env, event):
             event['sender']['login'],
             pr['commits'] == 1
         )
+        if pr['base']['ref'] != pr_obj.target.name:
+            env['runbot_merge.fetch_job'].create({
+                'repository': pr_obj.repository.id,
+                'number': pr_obj.number,
+                'commits_at': datetime.now() + timedelta(minutes=5),
+            })
 
         pr_obj.write({
             'reviewed_by': False,

@@ -806,10 +806,12 @@ class TestBlocked:
 
         p = to_pr(env, pr)
         assert p.state == 'ready'
-        assert p.blocked
+        assert not p.blocked
+        assert not p.staging_id
 
         with repo_a: pr.post_comment('hansen rebase-merge', config['role_reviewer']['token'])
-        assert not p.blocked
+        env.run_crons()
+        assert p.staging_id
 
     def test_linked_closed(self, env, repo_a, repo_b, config):
         with repo_a, repo_b:

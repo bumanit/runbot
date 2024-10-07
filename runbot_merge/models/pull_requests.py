@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import collections
 import contextlib
 import datetime
@@ -106,7 +107,7 @@ All substitutions are tentatively applied sequentially to the input.
             self._cr, 'runbot_merge_unique_repo', self._table, ['name'])
         return res
 
-    def _load_pr(self, number, *, closing=False):
+    def _load_pr(self, number, *, closing=False, squash=False):
         gh = self.github()
 
         # fetch PR object and handle as *opened*
@@ -133,6 +134,10 @@ All substitutions are tentatively applied sequentially to the input.
             ('number', '=', number),
         ])
         if pr_id:
+            if squash:
+                pr_id.squash = pr['commits'] == 1
+                return
+
             sync = controllers.handle_pr(self.env, {
                 'action': 'synchronize',
                 'pull_request': pr,
@@ -583,8 +588,6 @@ class PullRequests(models.Model):
 
     @api.depends(
         'batch_id.prs.draft',
-        'batch_id.prs.squash',
-        'batch_id.prs.merge_method',
         'batch_id.prs.state',
         'batch_id.skipchecks',
     )
@@ -592,12 +595,11 @@ class PullRequests(models.Model):
         self.blocked = False
         requirements = (
             lambda p: not p.draft,
-            lambda p: p.squash or p.merge_method,
             lambda p: p.state == 'ready' \
                   or p.batch_id.skipchecks \
                  and all(pr.state != 'error' for pr in p.batch_id.prs)
         )
-        messages = ('is in draft', 'has no merge method', 'is not ready')
+        messages = ('is in draft', 'is not ready')
         for pr in self:
             if pr.state in ('merged', 'closed'):
                 continue
@@ -834,6 +836,10 @@ For your own safety I've ignored *everything in your entire comment*.
                         pull_request=self.number,
                         format_args={'new_method': explanation, 'pr': self, 'user': login},
                     )
+                    # if the merge method is the only thing preventing (but not
+                    # *blocking*) staging, trigger a staging
+                    if self.state == 'ready':
+                        self.env.ref("runbot_merge.staging_cron")._trigger()
                 case commands.Retry() if is_author or source_author:
                     if self.error:
                         self.error = False
@@ -2497,31 +2503,41 @@ class FetchJob(models.Model):
     repository = fields.Many2one('runbot_merge.repository', required=True)
     number = fields.Integer(required=True, group_operator=None)
     closing = fields.Boolean(default=False)
+    commits_at = fields.Datetime(index="btree_not_null")
 
     @api.model_create_multi
     def create(self, vals_list):
-        self.env.ref('runbot_merge.fetch_prs_cron')._trigger()
+        now = fields.Datetime.now()
+        self.env.ref('runbot_merge.fetch_prs_cron')._trigger({
+            fields.Datetime.to_datetime(
+                vs.get('commits_at') or now
+            )
+            for vs in vals_list
+        })
         return super().create(vals_list)
 
     def _check(self, commit=False):
         """
         :param bool commit: commit after each fetch has been executed
         """
+        now = getattr(builtins, 'current_date', None) or fields.Datetime.to_string(datetime.datetime.now())
         while True:
-            f = self.search([], limit=1)
+            f = self.search([
+                '|', ('commits_at', '=', False), ('commits_at', '<=', now)
+            ], limit=1)
             if not f:
                 return
 
+            f.active = False
             self.env.cr.execute("SAVEPOINT runbot_merge_before_fetch")
             try:
-                f.repository._load_pr(f.number, closing=f.closing)
+                f.repository._load_pr(f.number, closing=f.closing, squash=bool(f.commits_at))
             except Exception:
                 self.env.cr.execute("ROLLBACK TO SAVEPOINT runbot_merge_before_fetch")
                 _logger.exception("Failed to load pr %s, skipping it", f.number)
             finally:
                 self.env.cr.execute("RELEASE SAVEPOINT runbot_merge_before_fetch")
 
-            f.active = False
             if commit:
                 self.env.cr.commit()
 

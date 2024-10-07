@@ -262,6 +262,10 @@ def stage_batches(branch: Branch, batches: Batch, staging_state: StagingState) -
             break
         try:
             staged |= stage_batch(env, batch, staging_state)
+        except exceptions.Skip:
+            # skip silently because the PR will be retried on every staging
+            # which is going to be ultra spammy
+            pass
         except exceptions.MergeError as e:
             pr = e.args[0]
             _logger.info("Failed to stage %s into %s", pr.display_name, branch.name)
@@ -419,9 +423,19 @@ def stage(pr: PullRequests, info: StagingSlice, related_prs: PullRequests) -> Tu
         invalid['target'] = branch.id
         diff.append(('Target branch', pr.target.name, branch.name))
 
-    if pr.squash != commits == 1:
-        invalid['squash'] = commits == 1
-        diff.append(('Single commit', pr.squash, commits == 1))
+    if not method:
+        if not pr.method_warned:
+            pr.env.ref('runbot_merge.pr.merge_method')._send(
+                repository=pr.repository,
+                pull_request=pr.number,
+                format_args={'pr': pr, 'methods': ''.join(
+                    '* `%s` to %s\n' % pair
+                    for pair in type(pr).merge_method.selection
+                    if pair[0] != 'squash'
+                )},
+            )
+            pr.method_warned = True
+        raise exceptions.Skip()
 
     msg = utils.make_message(prdict)
     if pr.message != msg:

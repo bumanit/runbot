@@ -195,7 +195,7 @@ class Batch(models.Model):
 
     @api.depends(
         "merge_date",
-        "prs.error", "prs.draft", "prs.squash", "prs.merge_method",
+        "prs.error", "prs.draft",
         "skipchecks",
         "prs.status", "prs.reviewed_by", "prs.target",
     )
@@ -208,7 +208,7 @@ class Batch(models.Model):
             elif len(targets := batch.prs.mapped('target')) > 1:
                 batch.blocked = f"Multiple target branches: {', '.join(targets.mapped('name'))!r}"
             elif blocking := batch.prs.filtered(
-                lambda p: p.error or p.draft or not (p.squash or p.merge_method)
+                lambda p: p.error or p.draft
             ):
                 batch.blocked = "Pull request(s) %s blocked." % ', '.join(blocking.mapped('display_name'))
             elif not batch.skipchecks and (unready := batch.prs.filtered(
