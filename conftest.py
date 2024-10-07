@@ -437,6 +437,7 @@ class Base(models.AbstractModel):
     _inherit = 'base'
 
     def run_crons(self):
+        builtins.current_date = self.env.context.get('current_date')
         builtins.forwardport_merged_before = self.env.context.get('forwardport_merged_before')
         builtins.forwardport_updated_before = self.env.context.get('forwardport_updated_before')
         self.env['ir.cron']._process_jobs(self.env.cr.dbname)
