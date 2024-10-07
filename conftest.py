@@ -1425,6 +1425,9 @@ class Model:
         )
 
     def mapped(self, path):
+        if callable(path):
+            return [path(r) for r in self]
+
         field, *rest = path.split('.', 1)
         descr = self._fields[field]
         if descr['type'] in ('many2one', 'one2many', 'many2many'):
