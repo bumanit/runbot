@@ -1100,7 +1100,7 @@ class BuildResult(models.Model):
         python_params = python_params or []
         py_version = py_version if py_version is not None else build._get_py_version()
         pres = []
-        if not self.params_id.skip_requirements:
+        if not self.params_id.skip_requirements and not self.params_id.config_data.get('skip_requirements'):
             for commit_id in self.env.context.get('defined_commit_ids') or self.params_id.commit_ids.sorted(lambda c: (c.repo_id.sequence, c.repo_id.id)):
                 if os.path.isfile(commit_id._source_path('requirements.txt')):
                     repo_dir = self._docker_source_folder(commit_id)
