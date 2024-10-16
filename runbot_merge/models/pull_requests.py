@@ -431,10 +431,16 @@ class PullRequests(models.Model):
     staging_id = fields.Many2one('runbot_merge.stagings', compute='_compute_staging', inverse=readonly, readonly=True, store=True)
     staging_ids = fields.Many2many('runbot_merge.stagings', string="Stagings", compute='_compute_stagings', inverse=readonly, readonly=True, context={"active_test": False})
 
-    @api.depends('batch_id.batch_staging_ids.runbot_merge_stagings_id.active')
+    @api.depends(
+        'closed',
+        'batch_id.batch_staging_ids.runbot_merge_stagings_id.active',
+    )
     def _compute_staging(self):
         for p in self:
-            p.staging_id = p.batch_id.staging_ids.filtered('active')
+            if p.closed:
+                p.staging_id = False
+            else:
+                p.staging_id = p.batch_id.staging_ids.filtered('active')
 
     @api.depends('batch_id.batch_staging_ids.runbot_merge_stagings_id')
     def _compute_stagings(self):
@@ -1250,10 +1256,10 @@ For your own safety I've ignored *everything in your entire comment*.
     )
     def _compute_state(self):
         for pr in self:
-            if pr.batch_id.merge_date:
-                pr.state = 'merged'
-            elif pr.closed:
+            if pr.closed:
                 pr.state = "closed"
+            elif pr.batch_id.merge_date:
+                pr.state = 'merged'
             elif pr.error:
                 pr.state = "error"
             elif pr.batch_id.skipchecks: # skipchecks behaves as both approval and status override
@@ -1337,12 +1343,6 @@ For your own safety I've ignored *everything in your entire comment*.
         self._cr.execute("CREATE INDEX IF NOT EXISTS runbot_merge_pr_head "
                          "ON runbot_merge_pull_requests "
                          "USING hash (head)")
-
-    @property
-    def _tagstate(self):
-        if self.state == 'ready' and self.staging_id.heads:
-            return 'staged'
-        return self.state
 
     def _get_batch(self, *, target, label):
         batch = self.env['runbot_merge.batch']
