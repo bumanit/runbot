@@ -78,6 +78,18 @@ import requests
 NGROK_CLI = [
     'ngrok', 'start', '--none', '--region', 'eu',
 ]
+# When an operation can trigger webhooks, the test suite has to wait *some time*
+# in the hope that the webhook(s) will have been dispatched by the end as github
+# provides no real webhook feedback (e.g. an event stream).
+#
+# This also acts as a bit of a rate limiter, as github has gotten more and more
+# angry with that. Especially around event-generating limits.
+#
+# TODO: explore https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+#       and see if it would be possible to be a better citizen (e.g. add test
+#       retry / backoff using GH tighter GH integration)
+WEBHOOK_WAIT_TIME = 10  # seconds
+LOCAL_WEBHOOK_WAIT_TIME = 1
 
 def pytest_addoption(parser):
     parser.addoption('--addons-path')
@@ -98,7 +110,12 @@ def pytest_addoption(parser):
 def is_manager(config):
     return not hasattr(config, 'workerinput')
 
-def pytest_configure(config):
+def pytest_configure(config: pytest.Config) -> None:
+    global WEBHOOK_WAIT_TIME
+    # no tunnel => local setup, no need to wait as much
+    if not config.getoption('--tunnel'):
+        WEBHOOK_WAIT_TIME = LOCAL_WEBHOOK_WAIT_TIME
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mergebot_test_utils'))
     config.addinivalue_line(
         "markers",
@@ -108,7 +125,6 @@ def pytest_configure(config):
         "markers",
         "defaultstatuses: use the statuses `default` rather than `ci/runbot,legal/cla`",
     )
-
 
 def pytest_unconfigure(config):
     if not is_manager(config):
@@ -126,7 +142,7 @@ def _set_socket_timeout():
     socket.setdefaulttimeout(120.0)
 
 @pytest.fixture(scope="session")
-def config(pytestconfig):
+def config(pytestconfig: pytest.Config) -> dict[str, dict[str, str]]:
     """ Flat version of the pytest config file (pytest.ini), parses to a
     simple dict of {section: {key: value}}
 
@@ -211,7 +227,7 @@ def users(partners, rolemap):
     return {k: v['login'] for k, v in rolemap.items()}
 
 @pytest.fixture(scope='session')
-def tunnel(pytestconfig, port):
+def tunnel(pytestconfig: pytest.Config, port: int):
     """ Creates a tunnel to localhost:<port> using ngrok or localtunnel, should yield the
     publicly routable address & terminate the process at the end of the session
     """
@@ -368,8 +384,8 @@ def db(request, module, dbcache, tmpdir):
     if not request.config.getoption('--no-delete'):
         subprocess.run(['dropdb', rundb], check=True)
 
-def wait_for_hook(n=1):
-    time.sleep(10 * n)
+def wait_for_hook():
+    time.sleep(WEBHOOK_WAIT_TIME)
 
 def wait_for_server(db, port, proc, mod, timeout=120):
     """ Polls for server to be response & have installed our module.
@@ -999,11 +1015,11 @@ class Repo:
                 return
 
     def __enter__(self):
-        self.hook = 1
+        self.hook = True
         return self
     def __exit__(self, *args):
-        wait_for_hook(self.hook)
-        self.hook = 0
+        wait_for_hook()
+        self.hook = False
     class Commit:
         def __init__(self, message, *, author=None, committer=None, tree, reset=False):
             self.id = None
@@ -1137,7 +1153,6 @@ class PR:
             headers=headers
         )
         assert 200 <= r.status_code < 300, r.text
-        wait_for_hook()
 
     def delete_comment(self, cid, token=None):
         assert self.repo.hook
