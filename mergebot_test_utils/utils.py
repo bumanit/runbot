@@ -134,7 +134,7 @@ def make_basic(
     prod = make_repo(reponame)
     env['runbot_merge.events_sources'].create({'repository': prod.name})
     with prod:
-        a_0, a_1, a_2, a_3, a_4, = prod.make_commits(
+        _0, _1, a_2, _3, _4, = prod.make_commits(
             None,
             Commit("0", tree={'f': 'a'}),
             Commit("1", tree={'f': 'b'}),
@@ -143,7 +143,7 @@ def make_basic(
             Commit("4", tree={'f': 'e'}),
             ref='heads/a',
         )
-        b_1, b_2 = prod.make_commits(
+        b_1, _2 = prod.make_commits(
             a_2,
             Commit('11', tree={'g': 'a'}),
             Commit('22', tree={'g': 'b'}),
