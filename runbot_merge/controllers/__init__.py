@@ -210,12 +210,8 @@ def handle_pr(env, event):
                 updates['target'] = branch.id
                 updates['squash'] = pr['commits'] == 1
 
-        # turns out github doesn't bother sending a change key if the body is
-        # changing from empty (None), therefore ignore that entirely, just
-        # generate the message and check if it changed
-        message = utils.make_message(pr)
-        if message != pr_obj.message:
-            updates['message'] = message
+        if 'title' in event['changes'] or 'body' in event['changes']:
+            updates['message'] = utils.make_message(pr)
 
         _logger.info("update: %s = %s (by %s)", pr_obj.display_name, updates, event['sender']['login'])
         if updates:
