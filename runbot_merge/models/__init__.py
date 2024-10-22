@@ -8,5 +8,6 @@ from . import patcher
 from . import project_freeze
 from . import stagings_create
 from . import staging_cancel
+from . import backport
 from . import events_sources
 from . import crons

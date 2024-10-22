@@ -202,7 +202,7 @@ class ForwardPortTasks(models.Model, Queue):
             # NOTE: ports the new source everywhere instead of porting each
             #       PR to the next step as it does not *stop* on conflict
             repo = git.get_local(source.repository)
-            conflict, head = source._create_fp_branch(repo, target)
+            conflict, head = source._create_port_branch(repo, target, forward=True)
             repo.push(git.fw_url(pr.repository), f'{head}:refs/heads/{ref}')
 
             remote_target = repository.fp_remote_target
@@ -302,7 +302,7 @@ class UpdateQueue(models.Model, Queue):
                     return
 
                 repo = git.get_local(previous.repository)
-                conflicts, new_head = previous._create_fp_branch(repo, child.target)
+                conflicts, new_head = previous._create_port_branch(repo, child.target, forward=True)
 
                 if conflicts:
                     _, out, err, _ = conflicts

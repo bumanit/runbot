@@ -34,6 +34,8 @@ from odoo.addons.runbot_merge import git, utils
 from odoo.addons.runbot_merge.models.pull_requests import Branch
 from odoo.addons.runbot_merge.models.stagings_create import Message
 
+Conflict = tuple[str, str, str, list[str]]
+
 DEFAULT_DELTA = dateutil.relativedelta.relativedelta(days=3)
 
 _logger = logging.getLogger('odoo.addons.forwardport')
@@ -287,17 +289,29 @@ class PullRequests(models.Model):
         return sorted(commits, key=lambda c: idx[c['sha']])
 
 
-    def _create_fp_branch(self, source, target_branch):
+    def _create_port_branch(
+            self,
+            source: git.Repo,
+            target_branch: Branch,
+            *,
+            forward: bool,
+    ) -> tuple[typing.Optional[Conflict], str]:
         """ Creates a forward-port for the current PR to ``target_branch`` under
         ``fp_branch_name``.
 
-        :param target_branch: the branch to port forward to
-        :rtype: (None | (str, str, str, list[commit]), Repo)
+        :param source: the git repository to work with / in
+        :param target_branch: the branch to port ``self`` to
+        :param forward: whether this is a forward (``True``) or a back
+                        (``False``) port
+        :returns: a conflict if one happened, and the head of the port branch
+                  (either a succcessful port of the entire `self`, or a conflict
+                  commit)
         """
         logger = _logger.getChild(str(self.id))
         root = self.root_id
         logger.info(
-            "Forward-porting %s (%s) to %s",
+            "%s %s (%s) to %s",
+            "Forward-porting" if forward else "Back-porting",
             self.display_name, root.display_name, target_branch.name
         )
         fetch = source.with_config(stdout=subprocess.PIPE, stderr=subprocess.STDOUT).fetch()

@@ -326,7 +326,7 @@ class Batch(models.Model):
         conflicts = {}
         for pr in prs:
             repo = git.get_local(pr.repository)
-            conflicts[pr], head = pr._create_fp_branch(repo, target)
+            conflicts[pr], head = pr._create_port_branch(repo, target, forward=True)
 
             repo.push(git.fw_url(pr.repository), f"{head}:refs/heads/{new_branch}")
 

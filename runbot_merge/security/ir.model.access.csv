@@ -32,3 +32,4 @@ access_runbot_merge_review_rights_2,Users can see partners,model_res_partner_rev
 access_runbot_merge_review_override_2,Users can see partners,model_res_partner_override,base.group_user,1,0,0,0
 access_runbot_merge_pull_requests_feedback_template,access_runbot_merge_pull_requests_feedback_template,runbot_merge.model_runbot_merge_pull_requests_feedback_template,base.group_system,1,1,0,0
 access_runbot_merge_patch,Patcher access,runbot_merge.model_runbot_merge_patch,runbot_merge.group_patcher,1,1,1,0
+access_runbot_merge_backport_admin,Admin access to backport wizard,model_runbot_merge_pull_requests_backport,runbot_merge.group_admin,1,1,1,0
