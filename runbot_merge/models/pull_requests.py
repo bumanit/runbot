@@ -1758,6 +1758,8 @@ class Tagging(models.Model):
             values['tags_remove'] = json.dumps(list(values['tags_remove']))
         if not isinstance(values.get('tags_add', ''), str):
             values['tags_add'] = json.dumps(list(values['tags_add']))
+        if values:
+            self.env.ref('runbot_merge.labels_cron')._trigger()
         return super().create(values)
 
     def _send(self):
