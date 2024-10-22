@@ -374,7 +374,7 @@ def handle_status(env, event):
             SET to_check = true,
                 statuses = c.statuses::jsonb || EXCLUDED.statuses::jsonb
             WHERE NOT c.statuses::jsonb @> EXCLUDED.statuses::jsonb
-    """, [event['sha'], status_value])
+    """, [event['sha'], status_value], log_exceptions=False)
     env.ref("runbot_merge.process_updated_commits")._trigger()
 
     return 'ok'

@@ -23,7 +23,7 @@ from markupsafe import Markup
 from odoo import api, fields, models, tools, Command
 from odoo.exceptions import AccessError, UserError
 from odoo.osv import expression
-from odoo.tools import html_escape, Reverse
+from odoo.tools import html_escape, Reverse, mute_logger
 from . import commands
 from .utils import enum, readonly, dfm
 
@@ -1978,9 +1978,11 @@ class Commit(models.Model):
             self.env.ref("runbot_merge.process_updated_commits")._trigger()
         return r
 
+    @mute_logger('odoo.sql_db')
     def _notify(self):
         Stagings = self.env['runbot_merge.stagings']
         PRs = self.env['runbot_merge.pull_requests']
+        serialization_failures = False
         # chances are low that we'll have more than one commit
         for c in self.search([('to_check', '=', True)]):
             sha = c.sha
@@ -1999,15 +2001,18 @@ class Commit(models.Model):
                 if stagings:
                     stagings._notify(c)
             except psycopg2.errors.SerializationFailure:
-                _logger.info("Failed to apply commit %s (%s): serialization failure", c, sha)
+                serialization_failures = True
+                _logger.info("Failed to apply commit %s: serialization failure", sha)
                 self.env.cr.rollback()
             except Exception:
-                _logger.exception("Failed to apply commit %s (%s)", c, sha)
+                _logger.exception("Failed to apply commit %s", sha)
                 self.env.cr.rollback()
             else:
                 self.env.cr.precommit.data['change-message'] = \
                     f"statuses changed on {sha}"
                 self.env.cr.commit()
+        if serialization_failures:
+            self.env.ref("runbot_merge.process_updated_commits")._trigger()
 
     _sql_constraints = [
         ('unique_sha', 'unique (sha)', 'no duplicated commit'),
