@@ -1,3 +1,4 @@
+import lxml.html
 import pytest
 
 from utils import seen, Commit, make_basic, to_pr
@@ -106,7 +107,7 @@ def test_ignore(env, config, make_repo, users):
         "should finally have created a forward port"
 
 
-def test_unignore(env, config, make_repo, users):
+def test_unignore(env, config, make_repo, users, page):
     env['res.partner'].create({'name': users['other'], 'github_login': users['other'], 'email': 'other@example.org'})
 
     prod, _ = make_basic(env, config, make_repo, statuses="default")
@@ -121,10 +122,18 @@ def test_unignore(env, config, make_repo, users):
     pr_id = to_pr(env, pr)
     assert pr_id.batch_id.fw_policy == 'default'
 
+    doc = lxml.html.fromstring(page(f'/{prod.name}/pull/{pr.number}'))
+    assert len(doc.cssselect("table > tbody > tr")) == 3, \
+        "the overview table should have as many rows as there are tables"
+
     with prod:
         pr.post_comment('hansen fw=no', token)
     env.run_crons(None)
     assert pr_id.batch_id.fw_policy == 'no'
+
+    doc = lxml.html.fromstring(page(f'/{prod.name}/pull/{pr.number}'))
+    assert len(doc.cssselect("table > tbody > tr")) == 1, \
+        "if fw=no, there should be just one row"
 
     with prod:
         pr.post_comment('hansen fw=default', token)

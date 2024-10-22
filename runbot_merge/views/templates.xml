@@ -465,6 +465,8 @@ if not genealogy:
     repos = pr.repository
 elif all(p.state in ('merged', 'closed') for p in genealogy[-1].all_prs):
     branches = (project.branch_ids & targets)[::-1]
+elif pr.batch_id.fw_policy == 'no':
+    branches = pr.target
 else:
     # if the tip of the genealogy is not closed, extend to the furthest limit,
     # keeping branches which are active or have an associated batch / PR
