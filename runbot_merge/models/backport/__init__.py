@@ -52,6 +52,7 @@ class PullRequest(models.Model):
 
 class PullRequestBackport(models.TransientModel):
     _name = 'runbot_merge.pull_requests.backport'
+    _description = "PR backport wizard"
     _rec_name = 'pr_id'
 
     pr_id = fields.Many2one('runbot_merge.pull_requests', required=True)
