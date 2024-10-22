@@ -193,6 +193,8 @@
           <field name="fixing_commit"/>
           <filter string="Assigned to me" name="my_errors" domain="[('responsible', '=', uid)]"/>
           <separator/>
+          <filter string="Customer is me" name="my_errors_customer" domain="[('customer', '=', uid)]"/>
+          <separator/>
           <filter string="No Parent" name="no_parent_error" domain="[('parent_id', '=', False)]"/>
           <separator/>
           <filter string="Undeterministic" name="random_error" domain="[('random', '=', True)]"/>
