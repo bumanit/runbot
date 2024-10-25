@@ -9,6 +9,9 @@ from markupsafe import Markup
 from werkzeug.urls import url_join
 from odoo import models, fields, api
 from odoo.exceptions import ValidationError, UserError
+from odoo.tools import SQL
+
+from ..fields import JsonDictField
 
 _logger = logging.getLogger(__name__)
 
@@ -349,6 +352,7 @@ class BuildErrorContent(models.Model):
     version_ids = fields.One2many('runbot.version', compute='_compute_version_ids', string='Versions', search='_search_version')
     trigger_ids = fields.Many2many('runbot.trigger', compute='_compute_trigger_ids', string='Triggers', search='_search_trigger_ids')
     tag_ids = fields.Many2many('runbot.build.error.tag', string='Tags')
+    qualifiers = JsonDictField('Qualifiers', index=True)
 
     responsible = fields.Many2one(related='error_id.responsible')
     customer = fields.Many2one(related='error_id.customer')
@@ -491,6 +495,17 @@ class BuildErrorContent(models.Model):
         domain = [('id', 'in', self.ids)] if self else []
         return [r['id_arr'] for r in self.env['runbot.build.error.content'].read_group(domain, ['id_count:count(id)', 'id_arr:array_agg(id)', 'fingerprint'], ['fingerprint']) if r['id_count'] >1]
 
+    def _qualify(self):
+        qualify_regexes = self.env['runbot.error.qualify.regex'].search([])
+        for record in self:
+            all_qualifiers = {}
+            for qualify_regex in qualify_regexes:
+                res = qualify_regex._qualify(record.content)  # TODO, MAYBE choose the source field
+                if res:
+                    # res.update({'qualifier_id': qualify_regex.id}) Probably not a good idea
+                    all_qualifiers.update(res)
+            record.qualifiers = all_qualifiers
+
     ####################
     #   Actions
     ####################
@@ -545,6 +560,9 @@ class BuildErrorContent(models.Model):
             "name": "Duplicate Error contents",
             'view_mode': 'tree,form'
         }
+
+    def action_qualify(self):
+        self._qualify()
 
 
 class BuildErrorTag(models.Model):
@@ -618,3 +636,76 @@ class ErrorBulkWizard(models.TransientModel):
             if self.chatter_comment:
                 for build_error in error_ids:
                     build_error.message_post(body=Markup('%s') % self.chatter_comment, subject="Bullk Wizard Comment")
+
+
+class ErrorQualifyRegex(models.Model):
+
+    _name = "runbot.error.qualify.regex"
+    _description = "Build error qualifying regex"
+    _inherit = "mail.thread"
+    _rec_name = 'id'
+    _order = 'sequence, id'
+
+    sequence = fields.Integer('Sequence', default=100)
+    active = fields.Boolean('Active', default=True, tracking=True)
+    regex = fields.Char('Regular expression', required=True)
+    source_field = fields.Selection(
+        [
+            ("content", "Content"),
+            ("module", "Module Name"),
+            ("function", "Function Name"),
+            ("file_path", "File Path"),
+        ],
+        default="content",
+        string="Source Field",
+        help="Build error field on which the regex will be applied to extract a qualifier",
+    )
+
+    test_ids = fields.One2many('runbot.error.qualify.test', 'qualify_regex_id', string="Test Sample", help="Error samples to test qualifying regex")
+
+    @api.constrains('regex')
+    def _validate(self):
+        for rec in self:
+            try:
+                r = re.compile(rec.regex)
+            except re.error as e:
+                raise ValidationError("Unable to compile regular expression: %s" % e)
+            # verify that a named group exist in the pattern
+            if not re.search(r'\(\?P<\w+>.+\)', r.pattern):
+                raise ValidationError(
+                    "The regular expresion should contain at least one named group pattern e.g: '(?P<module>.+)'"
+                )
+
+    def _qualify(self, content):
+        self.ensure_one()
+        result = False
+        if content and self.regex:
+            result = re.search(self.regex, content, flags=re.MULTILINE)
+        return result.groupdict() if result else {}
+
+    @api.depends('regex', 'test_string')
+    def _compute_qualifiers(self):
+        for record in self:
+            if record.regex and record.test_string:
+                record.qualifiers = record._qualify(record.test_string)
+            else:
+                record.qualifiers = {}
+
+
+class QualifyErrorTest(models.Model):
+    _name = 'runbot.error.qualify.test'
+    _description = 'Extended Relation between a qualify regex and a build error taken as sample'
+
+    qualify_regex_id = fields.Many2one('runbot.error.qualify.regex', required=True)
+    error_content_id = fields.Many2one('runbot.build.error.content', string='Build Error', required=True)
+    build_error_summary = fields.Char(related='error_content_id.summary')
+    build_error_content = fields.Text(related='error_content_id.content')
+    expected_result = JsonDictField('Expected Qualifiers')
+    result = JsonDictField('Result', compute='_compute_result')
+    is_matching = fields.Boolean(compute='_compute_result', default=False)
+
+    @api.depends('qualify_regex_id', 'error_content_id')
+    def _compute_result(self):
+        for record in self:
+            record.result = record.qualify_regex_id._qualify(record.build_error_content)
+            record.is_matching = record.result == record.expected_result and record.result != {}

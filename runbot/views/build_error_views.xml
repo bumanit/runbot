@@ -98,6 +98,9 @@
         <field name="model">runbot.build.error.content</field>
         <field name="arch" type="xml">
           <form>
+            <header>
+              <button type="object" name="action_qualify" string="Qualify"/>
+            </header>
             <sheet>
                 <group>
                   <field name="error_id"/>
@@ -107,6 +110,7 @@
                   <field name="module_name" readonly="1"/>
                   <field name="function" readonly="1"/>
                   <field name="file_path" readonly="1"/>
+                  <field name="qualifiers" readonly="1"/>
                 </group>
                 <group name="infos" string="" col="2">
                   <group>
@@ -243,6 +247,7 @@
                   >
                 <header>
                   <button name="action_find_duplicates" type="object" string="Find duplicates" display="always"/>
+                  <button name="action_qualify" string="Qualify" type="object" groups="runbot.group_runbot_admin,runbot.group_runbot_error_manager"/>
                 </header>
                 <field name="error_display_id" optional="show"/>
                 <field name="module_name" optional="show" readonly="1"/>
@@ -315,6 +320,9 @@
           <filter name="group_error" string="By error" context="{'group_by':'error_id'}"/>
           <filter string="Undeterministic" name="random_error" domain="[('random', '=', True)]"/>
           <filter string="Deterministic" name="random_error" domain="[('random', '=', False)]"/>
+          <separator/>
+          <filter string="Qualified" name="qualified_errors" domain="[('qualifiers', '!=', False)]"/>
+          <filter string="Not Qualified" name="not_qualified_errors" domain="[('qualifiers', '=', False)]"/>
           <separator/>
           <filter string="Fixed" name="fixed_errors" domain="[('error_id.active', '=', False)]"/>
           <filter string="Not Fixed" name="not_fixed_errors" domain="[('error_id.active', '=', True)]"/>
@@ -403,6 +411,76 @@
       <field name="code">
           action = model._find_duplicates()
       </field>
+    </record>
+
+    <record id="build_error_qualify_regex_tree" model="ir.ui.view">
+        <field name="name">runbot.error.qualify.regex.tree</field>
+        <field name="model">runbot.error.qualify.regex</field>
+        <field name="arch" type="xml">
+            <tree string="Qualifying Regexes">
+                <header>
+                </header>
+                <field name="sequence" widget="handle"/>
+                <field name="regex" readonly="1"/>
+                <field name="source_field" readonly="1"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="build_error_qualify_regex_form" model="ir.ui.view">
+        <field name="name">runbot.error.qualify.regex.form</field>
+        <field name="model">runbot.error.qualify.regex</field>
+        <field name="arch" type="xml">
+          <form>
+            <div class="alert alert-info" role="alert">
+              The regular expresion must have at least one named group pattern e.g: <code>'(?P&lt;module&gt;\w+)'</code>
+            </div>
+            <sheet>
+              <group name="Regex And Source">
+                <field name="regex"/>
+                <field name="source_field"/>
+              </group>
+              <group>
+                <field name="test_ids">
+                  <tree string="Test Samples" decoration-success="is_matching" decoration-danger="not is_matching">
+                    <field name="error_content_id"/>
+                    <field name="build_error_summary"/>
+                    <field name="expected_result" widget="runbotjsonb"/>
+                    <field name="result" widget="runbotjsonb" readonly="1"/>
+                    <field name="is_matching" column_invisible="True"/>
+                  </tree>
+                </field>
+              </group>
+            </sheet>
+          </form>
+        </field>
+    </record>
+
+    <record id="runbot_error_qualify_test_form" model="ir.ui.view">
+      <field name="name">runbot.error.qualify.test.form</field>
+        <field name="model">runbot.error.qualify.test</field>
+        <field name="arch" type="xml">
+          <form>
+            <sheet>
+              <group name="Error Sample">
+                <field name="error_content_id"/>
+                <field name="expected_result" widget="runbotjsonb"/>
+              </group>
+              <group name="Result">
+                <field name="result" widget="runbotjsonb" readonly="1"/>
+              </group>
+              <group>
+                <field name="build_error_content"/>
+              </group>
+            </sheet>
+          </form>
+        </field>
+    </record>
+
+    <record id="open_view_build_error_qualify_regex_tree" model="ir.actions.act_window">
+        <field name="name">Build Errors Qualifying Regexes</field>
+        <field name="res_model">runbot.error.qualify.regex</field>
+        <field name="view_mode">tree,form</field>
     </record>
 
   </data>
