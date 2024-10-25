@@ -925,13 +925,15 @@ class ConfigStep(models.Model):
             build._logger('Step %s finished in %s' % (self.name, s2human(build.job_time)))
             return
 
-        kwargs = dict(message='Step %s finished in %s' % (self.name, s2human(build.job_time)))
+        message = 'Step %s finished in %s'
+        args = [self.name, s2human(build.job_time)]
+        log_type = 'runbot'
         if self.job_type == 'install_odoo':
-            kwargs['message'] += ' $$fa-download$$'
             db_suffix = build.params_id.config_data.get('db_name') or (build.params_id.dump_db.db_suffix if not self.create_db else False) or self.db_name
-            kwargs['path'] = '%s%s-%s.zip' % (build._http_log_url(), build.dest, db_suffix)
-            kwargs['log_type'] = 'link'
-        build._log('', **kwargs)
+            message += ' [@icon-download](%s%s-%s.zip)'
+            args += [build._http_log_url(), build.dest, db_suffix]
+            log_type = 'markdown'
+        build._log('', message, *args, log_type=log_type)
 
         if self.coverage:
             xml_url = '%scoverage.xml' % build._http_log_url()
