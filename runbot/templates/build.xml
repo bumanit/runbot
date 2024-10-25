@@ -286,6 +286,7 @@
                         <a t-att-href="href" t-attf-title="Func: {{l.func}}"><t t-esc="l.name"/>:<t t-esc="l.line"/></a>
                       </t>
                     </t>
+                    <!-- DEPRECATED: Will be removed once no ir.logging is concerned. -->
                     <span class="log_message" t-if="l.type == 'link' and len(l.message.split('$$')) == 3">
                       <t t-set="message" t-value="l.message.split('$$')"/>
                       <t t-if="message[1].startswith('fa-')">
