@@ -353,6 +353,7 @@ class BuildErrorContent(models.Model):
     trigger_ids = fields.Many2many('runbot.trigger', compute='_compute_trigger_ids', string='Triggers', search='_search_trigger_ids')
     tag_ids = fields.Many2many('runbot.build.error.tag', string='Tags')
     qualifiers = JsonDictField('Qualifiers', index=True)
+    similar_ids = fields.One2many('runbot.build.error.content', compute='_compute_similar_ids')
 
     responsible = fields.Many2one(related='error_id.responsible')
     customer = fields.Many2one(related='error_id.customer')
@@ -441,6 +442,22 @@ class BuildErrorContent(models.Model):
     def _compute_error_display_id(self):
         for error_content in self:
             error_content.error_display_id = error_content.error_id.id
+
+    @api.depends('qualifiers')
+    def _compute_similar_ids(self):
+        """error contents having the exactly the same qualifiers"""
+        for record in self:
+            if record.qualifiers:
+                query = SQL(
+                    r"""SELECT id FROM runbot_build_error_content WHERE id != %s AND qualifiers @> %s AND qualifiers <@ %s""",
+                    record.id,
+                    json.dumps(self.qualifiers.dict),
+                    json.dumps(self.qualifiers.dict),
+                )
+                self.env.cr.execute(query)
+                record.similar_ids = self.env['runbot.build.error.content'].browse([rec[0] for rec in self.env.cr.fetchall()])
+            else:
+                record.similar_ids = False
 
     @api.model
     def _digest(self, s):
@@ -563,6 +580,7 @@ class BuildErrorContent(models.Model):
 
     def action_qualify(self):
         self._qualify()
+
 
 
 class BuildErrorTag(models.Model):
