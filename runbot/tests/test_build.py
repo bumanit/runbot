@@ -473,7 +473,12 @@ class TestBuildResult(RunbotCase):
         self.assertEqual('pending', build1_1_2.global_state)
 
         build1_2.flush_recordset()
-        with self.assertQueries(['''UPDATE "runbot_build" SET "global_state"=%s,"local_state"=%s,"write_date"=%s,"write_uid"=%s WHERE id IN %s''']):
+        expected = """ UPDATE "runbot_build"
+                    SET "global_state" = "__tmp"."global_state"::VARCHAR, "local_state" = "__tmp"."local_state"::VARCHAR, "write_date" = "__tmp"."write_date"::timestamp, "write_uid" = "__tmp"."write_uid"::int4
+                    FROM (VALUES %s) AS "__tmp"("id", "global_state", "local_state", "write_date", "write_uid")
+                    WHERE "runbot_build"."id" = "__tmp"."id" """
+
+        with self.assertQueries([expected]):
             build1_2.local_state = "testing"
             build1_2.flush_recordset()
 
