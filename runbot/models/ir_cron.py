@@ -10,4 +10,4 @@ odoo.addons.base.models.ir_cron._intervalTypes['seconds'] = lambda interval: rel
 class ir_cron(models.Model):
     _inherit = "ir.cron"
 
-    interval_type = fields.Selection(selection_add=[('seconds', 'Seconds')])
+    interval_type = fields.Selection(selection_add=[('seconds', 'Seconds')], ondelete={'seconds': 'cascade'})
