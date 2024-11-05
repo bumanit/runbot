@@ -55,7 +55,7 @@ server {
   listen 8080;
   server_name ~^dockerhub\.<t t-esc="re_escape(host_name)"/>$;
 
-	location /v2/ {
+	location ~ ^/(v2/|v2/odoo/blobs/.*|v2/odoo/manifests/.*)$ {
 		limit_except GET HEAD OPTIONS {
 		    deny all;
 		}
