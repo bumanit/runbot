@@ -7,7 +7,7 @@ import re
 from odoo import Command
 from unittest.mock import patch, mock_open
 
-from odoo.tests.common import Form, tagged, HttpCase
+from odoo.tests.common import tagged, HttpCase
 from .common import RunbotCase
 
 _logger = logging.getLogger(__name__)
