@@ -103,8 +103,6 @@ admin_passwd=running_master_password</field>
         <field name="active" eval="False"/>
         <field name="interval_number">10</field>
         <field name="interval_type">seconds</field>
-        <field name="numbercall">-1</field>
-        <field name="doall" eval="False"/>
         <field name="model_id" ref="model_runbot_runbot"/>
         <field name="code">model._cron()</field>
         <field name="state">code</field>
