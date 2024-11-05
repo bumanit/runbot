@@ -10,7 +10,6 @@ import werkzeug.urls
 from collections import defaultdict, OrderedDict
 from werkzeug.exceptions import NotFound, Forbidden
 
-from odoo.addons.http_routing.models.ir_http import slug
 from odoo.addons.website.controllers.main import QueryURL
 
 from odoo.http import Controller, Response, request, route as o_route
@@ -57,7 +56,7 @@ def route(routes, **kw):
                 response.qcontext['refresh'] = refresh
                 response.qcontext['filter_mode'] = filter_mode
                 response.qcontext['default_category'] = request.env['ir.model.data']._xmlid_to_res_id('runbot.default_category')
-
+                slug = request.env['ir.http']._slug
                 response.qcontext['qu'] = QueryURL('/runbot/%s' % (slug(project) if project else ''), search=search, refresh=refresh, has_pr=has_pr)
                 if 'title' not in response.qcontext:
                     response.qcontext['title'] = 'Runbot %s' % project.name or ''
@@ -200,6 +199,7 @@ class Runbot(Controller):
             bundle = request.env['runbot.bundle'].search([('name', '=', bundle)], limit=1, order='id')
             if not bundle:
                 raise NotFound
+            slug = request.env['ir.http']._slug
             return werkzeug.utils.redirect(f'/runbot/bundle/{slug(bundle)}')
         domain = [('bundle_id', '=', bundle.id), ('hidden', '=', False)]
         batch_count = request.env['runbot.batch'].search_count(domain)
@@ -261,6 +261,7 @@ class Runbot(Controller):
             commit = request.env['runbot.commit'].search([('name', '=like', f'{commit_hash}%')], limit=1)
             if not commit.exists():
                 raise NotFound()
+            slug = request.env['ir.http']._slug
             return request.redirect(f"/runbot/commit/{slug(commit)}")
         status_list = request.env['runbot.commit.status'].search([('commit_id', '=', commit.id)], order='id desc')
         last_status_by_context = dict()
