@@ -6,7 +6,7 @@ from .common import RunbotCase, RunbotCaseMinimalSetup
 class TestBranch(RunbotCase):
 
     def test_base_fields(self):
-        self.assertEqual(self.branch_server.branch_url, 'https://example.com/base/server/list/master')
+        self.assertEqual(self.branch_server.branch_url, 'https://example.com/base/server/tree/master')
 
     def test_pull_request(self):
         mock_github = self.patchers['github_patcher']
