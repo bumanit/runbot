@@ -8,7 +8,6 @@ patch(Message.prototype, {
         this.kept = false;
     },
     isMultiline(trackingValue) {
-        console.log(trackingValue)
         const oldValue = trackingValue.oldValue.value;
         const newValue = trackingValue.newValue.value;
         return ((oldValue && typeof oldValue=== 'string' && oldValue.includes('\n')) && (newValue && typeof oldValue=== 'string' && newValue.includes('\n')))
