@@ -76,7 +76,7 @@ def migrate(cr, version):
         build_count = 0
         first_seen_build_id = first_seen_date = last_seen_build_id = last_seen_date = None
         if error_id in vals_by_error:
-            error_vals = [vals_by_error[error_id] for error_id in all_errors]
+            error_vals = [vals_by_error[error_id] for error_id in all_errors if error_id in vals_by_error]
             first_seen_build_id = min(vals[0] for vals in error_vals)
             first_seen_date = min(vals[1] for vals in error_vals)
             last_seen_build_id = max(vals[2] for vals in error_vals)
