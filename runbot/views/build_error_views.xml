@@ -308,6 +308,9 @@
           <filter string="Undeterministic" name="random_error" domain="[('random', '=', True)]"/>
           <filter string="Deterministic" name="random_error" domain="[('random', '=', False)]"/>
           <separator/>
+          <filter string="Fixed" name="fixed_errors" domain="[('error_id.active', '=', False)]"/>
+          <filter string="Not Fixed" name="not_fixed_errors" domain="[('error_id.active', '=', True)]"/>
+          <separator/>
           <filter string="Having a PR" name="pr_set_errors" domain="[('fixing_pr_id', '!=', False)]"/>
           <filter string="Fixing PR is closed" name="pr_closed_errors" domain="[('fixing_pr_id', '!=', False), ('fixing_pr_id.alive', '=', False)]"/>
           <filter string="Fixing PR is open" name="pr_open_errors" domain="[('fixing_pr_id', '!=', False), ('fixing_pr_id.alive', '=', True)]"/>
@@ -330,7 +333,7 @@
         <field name="name">Build errors contents</field>
         <field name="res_model">runbot.build.error.content</field>
         <field name="view_mode">tree,form</field>
-        <field name="context">{}</field>
+        <field name="context">{'search_default_not_fixed_errors': True}</field>
     </record>
 
     <record id="build_error_regex_form" model="ir.ui.view">
