@@ -291,6 +291,11 @@
           <filter string="Test Tags" name="test_tagged_errors" domain="[('test_tags', '!=', False)]"/>
           <separator/>
           <filter string="Not seen in one month" name="not_seen_one_month" domain="[('last_seen_date','&lt;', (context_today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d'))]"/>
+          <searchpanel>
+            <field name="team_id" select="multi" string="Assigned Team" icon="fa-users" enable_counters="1"/>
+            <field name="customer" select="multi" string="Customer" icon="fa-address-card" enable_counters="1"/>
+            <field name="trigger_ids" select="multi" string="Triggers" icon="fa-bullseye" enable_counters="1"/>
+          </searchpanel>
         </search>
       </field>
     </record>
