@@ -99,7 +99,7 @@ class BuildError(models.Model):
     build_ids = fields.Many2many('runbot.build', compute=_compute_related_error_content_ids('build_ids'))
     bundle_ids = fields.Many2many('runbot.bundle', compute=_compute_related_error_content_ids('bundle_ids'))
     version_ids = fields.Many2many('runbot.version', string='Versions', compute=_compute_related_error_content_ids('version_ids'))
-    trigger_ids = fields.Many2many('runbot.trigger', string='Triggers', compute=_compute_related_error_content_ids('trigger_ids'))
+    trigger_ids = fields.Many2many('runbot.trigger', string='Triggers', compute=_compute_related_error_content_ids('trigger_ids'), store=True)
     tag_ids = fields.Many2many('runbot.build.error.tag', string='Tags', compute=_compute_related_error_content_ids('tag_ids'))
 
     random = fields.Boolean('Random', compute="_compute_random", store=True)
