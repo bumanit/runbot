@@ -173,6 +173,9 @@
             <filter string="Is base" name="is_base" domain="[('is_base', '=', True)]"/>
             <filter string="Is sticky" name="is_sticky" domain="[('sticky', '=', True)]"/>
             <separator/>
+            <searchpanel>
+                <field name="project_id" select="multi" string="Projects" icon="fa-folder" enable_counters="1"/>
+            </searchpanel>
           </search>
         </field>
       </record>
