@@ -169,6 +169,9 @@
             <filter string="Has open pr" name="has_pr" domain="[('has_pr', '=', True)]"/>
             <filter string="No pr" name="no_pr" domain="[('branch_ids', '!=', []), '!', ('branch_ids', 'any', [('is_pr', '=', True)])]"/>
             <separator/>
+            <searchpanel>
+                <field name="project_id" select="multi" string="Projects" icon="fa-folder" enable_counters="1"/>
+            </searchpanel>
           </search>
         </field>
       </record>
