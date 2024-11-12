@@ -246,7 +246,9 @@ class Batch(models.Model):
                 domain=[
                     ('state', '=', 'done'),
                     ('bundle_id.project_id', '=', bundle.project_id.id),
+                    '|',
                     ('bundle_id.to_upgrade', '=', True),
+                    ('bundle_id.to_upgrade_from', '=', True),
                     ('bundle_id.is_base', '=', True),
                     ('category_id', '=', self.category_id.id),  # not 100% correct since it should match upgrade_dumps_trigger_id,
                                                                 # but all trigger should have upgrade_dumps_trigger_id in the same category
