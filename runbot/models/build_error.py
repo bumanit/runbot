@@ -326,6 +326,7 @@ class BuildErrorContent(models.Model):
     _rec_name = "id"
 
     error_id = fields.Many2one('runbot.build.error', 'Linked to', index=True, required=True)
+    error_display_id = fields.Integer(compute='_compute_error_display_id', string="Error id")
     content = fields.Text('Error message', required=True)
     cleaned_content = fields.Text('Cleaned error message')
     summary = fields.Char('Content summary', compute='_compute_summary', store=False)
@@ -423,6 +424,11 @@ class BuildErrorContent(models.Model):
     def _compute_summary(self):
         for build_error in self:
             build_error.summary = build_error.content[:80]
+
+    @api.depends('error_id')
+    def _compute_error_display_id(self):
+        for error_content in self:
+            error_content.error_display_id = error_content.error_id.id
 
     @api.model
     def _digest(self, s):

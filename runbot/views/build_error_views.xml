@@ -243,6 +243,7 @@
                 <header>
                   <button name="%(runbot.runbot_open_bulk_wizard)d" string="Bulk Update" type="action" groups="runbot.group_runbot_admin,runbot.group_runbot_error_manager"/>
                 </header>
+                <field name="error_display_id" optional="show"/>
                 <field name="module_name" optional="show" readonly="1"/>
                 <field name="summary" optional="show" readonly="1"/>
                 <field name="random" string="Random"/>
