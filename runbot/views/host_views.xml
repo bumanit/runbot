@@ -12,6 +12,7 @@
                         <field name="disp_name"/>
                         <field name="active"/>
                         <field name="use_remote_docker_registry"/>
+                        <field name="docker_registry_url"/>
                         <field name="last_start_loop" readonly='1'/>
                         <field name="last_end_loop" readonly='1'/>
                         <field name="last_success" readonly='1'/>
