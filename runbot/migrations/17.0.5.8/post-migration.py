@@ -5,6 +5,11 @@ _logger = logging.getLogger(__name__)
 
 def migrate(cr, version):
 
+    #cr.execute('CREATE SEQUENCE runbot_build_error_id_seq')
+    # update sequence
+    cr.execute("SELECT setval('runbot_build_error_id_seq',  (SELECT MAX(id) FROM runbot_build_error))")
+    cr.execute("ALTER TABLE runbot_build_error ALTER COLUMN id SET DEFAULT nextval('runbot_build_error_id_seq')")
+
     # get seen infos
     cr.execute("SELECT error_content_id, min(build_id), min(log_date), max(build_id), max(log_date), count(DISTINCT build_id) FROM runbot_build_error_link GROUP BY error_content_id")
     vals_by_error = {error: vals for error, *vals in cr.fetchall()}

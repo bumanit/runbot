@@ -70,8 +70,10 @@ def _compute_related_error_content_ids(field_name):
 
 class BuildError(models.Model):
     _name = "runbot.build.error"
-    _description = "An object to manage a group of errors log that fit together and assign them to a team"
+    _description = "Build error"
+    # An object to manage a group of errors log that fit together and assign them to a team
     _inherit = ('mail.thread', 'mail.activity.mixin', 'runbot.build.error.seen.mixin')
+
 
     name = fields.Char("Name")
     active = fields.Boolean('Open (not fixed)', default=True, tracking=True)
@@ -320,7 +322,7 @@ class BuildError(models.Model):
 class BuildErrorContent(models.Model):
 
     _name = 'runbot.build.error.content'
-    _description = "Build error log"
+    _description = "Build error content"
 
     _inherit = ('mail.thread', 'mail.activity.mixin', 'runbot.build.error.seen.mixin')
     _rec_name = "id"
@@ -360,9 +362,10 @@ class BuildErrorContent(models.Model):
                 previous_error_content = error_content.search([
                     ('fingerprint', '=', error_content.fingerprint),
                     ('error_id.active', '=', False),
+                    ('error_id.id', '!=', error_content.error_id.id or False),
                     ('id', '!=', error_content.id or False),
-                ])
-                if previous_error_content and previous_error_content != error_content.error_id:
+                ], order="id desc", limit=1)
+                if previous_error_content:
                     error_content.error_id.message_post(body=f"An historical error was found for error {error_content.id}: {previous_error_content.id}")
                     error_content.error_id.previous_error_id = previous_error_content.error_id
 
