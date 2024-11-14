@@ -504,8 +504,11 @@ class BuildErrorContent(models.Model):
 
         # merge identical errors
         errors_content_by_fingerprint = self.env['runbot.build.error.content'].search([('fingerprint', 'in', list(changed_fingerprints))])
+        to_merge = []
         for fingerprint in changed_fingerprints:
-            errors_content_to_merge = errors_content_by_fingerprint.filtered(lambda r: r.fingerprint == fingerprint)
+            to_merge.append(errors_content_by_fingerprint.filtered(lambda r: r.fingerprint == fingerprint))
+        # this must be done in other iteration since filtered may fail because of unlinked records from _merge
+        for errors_content_to_merge in to_merge:
             errors_content_to_merge._merge()
 
 
