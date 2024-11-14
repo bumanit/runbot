@@ -1183,8 +1183,8 @@ class BuildResult(models.Model):
     def _parse_logs(self):
         """ Parse build logs to classify errors """
         # only parse logs from builds in error and not already scanned
-        builds_to_scan = self.search([('id', 'in', self.ids), ('local_result', 'in', ('ko', 'killed', 'warn')), ('build_error_link_ids', '=', False)])
-        ir_logs = self.env['ir.logging'].search([('level', 'in', ('ERROR', 'WARNING', 'CRITICAL')), ('type', '=', 'server'), ('build_id', 'in', builds_to_scan.ids)])
+        builds_to_scan = self.filtered(lambda b: b.local_result in ('ko', 'killed', 'warn') and not b.build_error_link_ids)
+        ir_logs = builds_to_scan.log_ids.filtered(lambda l: l.level in ('ERROR', 'WARNING', 'CRITICAL'))
         return self.env['runbot.build.error']._parse_logs(ir_logs)
 
     def _is_file(self, file, mode='r'):
