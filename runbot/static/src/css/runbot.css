@@ -421,3 +421,8 @@ body, .table {
 .o_runbot_team_searchbar .nav {
 	margin-left: 0px !important;
 }
+
+
+code {
+	white-space: pre-wrap;
+}
