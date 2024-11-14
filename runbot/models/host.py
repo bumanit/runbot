@@ -126,7 +126,7 @@ class Host(models.Model):
         self.ensure_one()
         icp = self.env['ir.config_parameter']
         docker_registry_host = self.browse(int(icp.get_param('runbot.docker_registry_host_id', default=0)))
-        registry_url = self.registry_url.strip('/') if self.registry_url else f'dockerhub.{docker_registry_host.name}'
+        registry_url = self.docker_registry_url.strip('/') if self.docker_registry_url else f'dockerhub.{docker_registry_host.name}'
         # pull all images from the runbot docker registry
         is_registry = docker_registry_host == self
         all_docker_files = self.env['runbot.dockerfile'].search([])
