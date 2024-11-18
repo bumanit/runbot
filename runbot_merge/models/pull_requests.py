@@ -315,6 +315,13 @@ class Branch(models.Model):
                 'message': tmpl._format(pr=pr),
             } for pr in actives.prs])
             self.env.ref('runbot_merge.branch_cleanup')._trigger()
+
+        if (
+            (vals.get('staging_enabled') is True and not all(self.mapped('staging_enabled')))
+         or (vals.get('active') is True and not all(self.mapped('active')))
+        ):
+            self.env.ref('runbot_merge.staging_cron')._trigger()
+
         super().write(vals)
         return True
 
