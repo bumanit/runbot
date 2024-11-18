@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 import requests
 import sentry_sdk
+from babel.dates import format_timedelta
 from dateutil import relativedelta
 
 from odoo import api, fields, models
@@ -73,6 +74,7 @@ class ForwardPortTasks(models.Model, Queue):
         ('complete', 'Complete ported batches'),
     ], required=True)
     retry_after = fields.Datetime(required=True, default='1900-01-01 01:01:01')
+    retry_after_relative = fields.Char(compute="_compute_retry_after_relative")
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
     @api.model_create_multi
@@ -90,6 +92,15 @@ class ForwardPortTasks(models.Model, Queue):
         return super()._search_domain() + [
             ('retry_after', '<=', fields.Datetime.to_string(fields.Datetime.now())),
         ]
+
+    @api.depends('retry_after')
+    def _compute_retry_after_relative(self):
+        now = fields.Datetime.now()
+        for t in self:
+            if t.retry_after <= now:
+                t.retry_after_relative = ""
+            else:
+                t.retry_after_relative = format_timedelta(t.retry_after - now, locale=t.env.lang)
 
     def _on_failure(self):
         super()._on_failure()

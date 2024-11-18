@@ -11,6 +11,7 @@
             <tree>
                 <field name="source"/>
                 <field name="batch_id"/>
+                <field name="retry_after_relative" string="Retry In"/>
             </tree>
         </field>
     </record>
@@ -20,8 +21,13 @@
         <field name="arch" type="xml">
             <form>
                 <group>
-                    <group><field name="source"/></group>
-                    <group><field name="batch_id"/></group>
+                    <group>
+                        <field name="source"/>
+                        <field name="batch_id"/>
+                    </group>
+                    <group>
+                        <field name="retry_after"/>
+                    </group>
                 </group>
             </form>
         </field>
