@@ -1,7 +1,6 @@
 import logging
 import re
 import secrets
-import subprocess
 
 import requests
 
@@ -44,7 +43,7 @@ class PullRequest(models.Model):
         return {
             'type': 'ir.actions.act_window',
             'name': f"Backport of {self.display_name}",
-            'views': [('form', False)],
+            'views': [(False, 'form')],
             'target': 'new',
             'res_model': w._name,
             'res_id': w.id,
@@ -56,7 +55,12 @@ class PullRequestBackport(models.TransientModel):
     _rec_name = 'pr_id'
 
     pr_id = fields.Many2one('runbot_merge.pull_requests', required=True)
-    target = fields.Many2one('runbot_merge.branch')
+    project_id = fields.Many2one(related='pr_id.repository.project_id')
+    source_seq = fields.Integer(related='pr_id.target.sequence')
+    target = fields.Many2one(
+        'runbot_merge.branch',
+        domain="[('project_id', '=', project_id), ('sequence', '>', source_seq)]",
+    )
 
     def action_apply(self) -> dict:
         if not self.target:
@@ -135,7 +139,7 @@ class PullRequestBackport(models.TransientModel):
         return {
             'type': 'ir.actions.act_window',
             'name': "new backport",
-            'views': [('form', False)],
+            'views': [(False, 'form')],
             'res_model': backport._name,
             'res_id': backport.id,
         }
