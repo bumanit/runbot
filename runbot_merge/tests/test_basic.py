@@ -3414,7 +3414,7 @@ class TestUnknownPR:
             (users['reviewer'], 'hansen r+'),
             (users['reviewer'], 'hansen r+'),
             seen(env, prx, users),
-            (users['user'], f"@{users['user']} I didn't know about this PR and had to "
+            (users['user'], f"@{users['reviewer']} I didn't know about this PR and had to "
                             "retrieve its information, you may have to "
                             "re-approve it as I didn't see previous commands."),
         ]
@@ -3470,7 +3470,7 @@ class TestUnknownPR:
             # reviewer is set because fetch replays all the comments (thus
             # setting r+ and reviewer) but then syncs the head commit thus
             # unsetting r+ but leaving the reviewer
-            (users['user'], f"@{users['user']} I didn't know about this PR and had to retrieve "
+            (users['user'], f"@{users['reviewer']} I didn't know about this PR and had to retrieve "
                             "its information, you may have to re-approve it "
                             "as I didn't see previous commands."),
         ]

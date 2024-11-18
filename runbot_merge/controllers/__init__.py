@@ -431,7 +431,9 @@ def _handle_comment(env, repo, issue, comment, target=None):
     if not repository.project_id._find_commands(comment['body'] or ''):
         return "No commands, ignoring"
 
-    pr = env['runbot_merge.pull_requests']._get_or_schedule(repo, issue, target=target)
+    pr = env['runbot_merge.pull_requests']._get_or_schedule(
+        repo, issue, target=target, commenter=comment['user']['login'],
+    )
     if not pr:
         return "Unknown PR, scheduling fetch"
 

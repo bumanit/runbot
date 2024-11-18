@@ -107,7 +107,14 @@ All substitutions are tentatively applied sequentially to the input.
             self._cr, 'runbot_merge_unique_repo', self._table, ['name'])
         return res
 
-    def _load_pr(self, number, *, closing=False, squash=False):
+    def _load_pr(
+        self,
+        number: int,
+        *,
+        closing: bool = False,
+        squash: bool = False,
+        ping: str | None = None,
+    ):
         gh = self.github()
 
         # fetch PR object and handle as *opened*
@@ -238,7 +245,10 @@ All substitutions are tentatively applied sequentially to the input.
         self.env.ref('runbot_merge.pr.load.fetched')._send(
             repository=self,
             pull_request=number,
-            format_args={'pr': pr_id},
+            format_args={
+                'pr': pr_id,
+                'ping': ping or pr_id.ping,
+            },
         )
 
     def having_branch(self, branch):
@@ -635,7 +645,15 @@ class PullRequests(models.Model):
             return json.loads(self.overrides)
         return {}
 
-    def _get_or_schedule(self, repo_name, number, *, target=None, closing=False) -> PullRequests | None:
+    def _get_or_schedule(
+            self,
+            repo_name: str,
+            number: int,
+            *,
+            target: str | None = None,
+            closing: bool = False,
+            commenter: str | None = None,
+    ) -> PullRequests | None:
         repo = self.env['runbot_merge.repository'].search([('name', '=', repo_name)])
         if not repo:
             source = self.env['runbot_merge.events_sources'].search([('repository', '=', repo_name)])
@@ -682,6 +700,7 @@ class PullRequests(models.Model):
             'repository': repo.id,
             'number': number,
             'closing': closing,
+            'commenter': commenter,
         })
 
     def _iter_ancestors(self) -> Iterator[PullRequests]:
@@ -2518,6 +2537,7 @@ class FetchJob(models.Model):
     number = fields.Integer(required=True, group_operator=None)
     closing = fields.Boolean(default=False)
     commits_at = fields.Datetime(index="btree_not_null")
+    commenter = fields.Char()
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -2545,7 +2565,12 @@ class FetchJob(models.Model):
             f.active = False
             self.env.cr.execute("SAVEPOINT runbot_merge_before_fetch")
             try:
-                f.repository._load_pr(f.number, closing=f.closing, squash=bool(f.commits_at))
+                f.repository._load_pr(
+                    f.number,
+                    closing=f.closing,
+                    squash=bool(f.commits_at),
+                    ping=f.commenter and f'@{f.commenter} ',
+                )
             except Exception:
                 self.env.cr.execute("ROLLBACK TO SAVEPOINT runbot_merge_before_fetch")
                 _logger.exception("Failed to load pr %s, skipping it", f.number)
