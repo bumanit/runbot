@@ -8,7 +8,7 @@ class UpgradeExceptions(models.Model):
     _description = 'Upgrade exception'
 
     active = fields.Boolean('Active', default=True)
-    elements = fields.Text('Elements')
+    elements = fields.Text('Elements', required=True)
     bundle_id = fields.Many2one('runbot.bundle', index=True)
     info = fields.Text('Info')
     team_id = fields.Many2one('runbot.team', 'Assigned team', index=True)
