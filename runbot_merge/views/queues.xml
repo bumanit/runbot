@@ -23,7 +23,7 @@
         <field name="res_model">runbot_merge.pull_requests.feedback</field>
     </record>
     <record id="tree_feedback" model="ir.ui.view">
-        <field name="name">Feedback</field>
+        <field name="name">Feedback List</field>
         <field name="model">runbot_merge.pull_requests.feedback</field>
         <field name="arch" type="xml">
             <tree>
