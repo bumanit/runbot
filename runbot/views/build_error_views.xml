@@ -309,6 +309,7 @@
           <field name="module_name"/>
           <field name="function"/>
           <field name="version_ids"/>
+          <field name="fingerprint"/>
           <filter name="group_error" string="By error" context="{'group_by':'error_id'}"/>
           <filter string="Undeterministic" name="random_error" domain="[('random', '=', True)]"/>
           <filter string="Deterministic" name="random_error" domain="[('random', '=', False)]"/>
