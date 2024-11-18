@@ -28,8 +28,8 @@ _logger = logging.getLogger(__name__)
 FILE_PATTERN = re.compile(r"""
 # paths with spaces don't work well as the path can be followed by a timestamp
 # (in an unspecified format?)
----\x20a/(?P<file_from>\S+)(:?\s.*)?\n
-\+\+\+\x20b/(?P<file_to>\S+)(:?\s.*)?\n
+---\x20(?P<prefix_a>a/)?(?P<file_from>\S+)(:?\s.*)?\n
+\+\+\+\x20(?P<prefix_b>b/)?(?P<file_to>\S+)(:?\s.*)?\n
 @@\x20-(\d+(,\d+)?)\x20\+(\d+(,\d+)?)\x20@@ # trailing garbage
 """, re.VERBOSE)
 
@@ -98,7 +98,7 @@ def parse_format_patch(p: Patch) -> ParseResult:
 
     name, email = parseaddr(m['from'])
     author = (name, email, m['date'])
-    msg = m['subject'].removeprefix('[PATCH] ')
+    msg = re.sub(r'^\[PATCH( \d+/\d+)?\] ', '', m['subject'])
     body, _, rest = m.get_content().partition('---\n')
     if body:
         msg += '\n\n' + body
@@ -225,12 +225,16 @@ class Patch(models.Model):
                 patch.repository.name,
             )
             try:
-                c = patch._apply_commit(r) if patch.commit else patch._apply_patch(r)
+                if patch.commit:
+                    c = patch._apply_commit(r)
+                else:
+                    c = patch._apply_patch(r)
             except Exception as e:
                 if isinstance(e, PatchFailure):
                     subject = "Unable to apply patch"
                 else:
                     subject = "Unknown error while trying to apply patch"
+                _logger.error("%s:\n%s", subject, str(e))
                 patch.message_post(body=plaintext2html(e), subject=subject)
                 continue
             # `.` is the local "remote", so this updates target to c
@@ -276,10 +280,17 @@ class Patch(models.Model):
 
     def _apply_patch(self, r: git.Repo) -> str:
         p = self._parse_patch()
-        files = dict.fromkeys(
-            (m['file_to'] for m in FILE_PATTERN.finditer(p.patch)),
-            lambda _r, f: pathlib.Path(tmpdir, f).read_text(encoding="utf-8"),
-        )
+        files = {}
+        def reader(_r, f):
+            return pathlib.Path(tmpdir, f).read_text(encoding="utf-8")
+
+        prefix = 0
+        for m in FILE_PATTERN.finditer(p.patch):
+            if not prefix and m['prefix_a'] and m['prefix_b']:
+                prefix = 1
+
+            files[m['file_to']] = reader
+
         archiver = r.stdout(True)
         # if the parent is checked then we can't get rid of the kwarg and popen doesn't support it
         archiver._config.pop('check', None)
@@ -289,7 +300,7 @@ class Patch(models.Model):
              tempfile.TemporaryDirectory() as tmpdir:
             tf.extractall(tmpdir)
             patch = subprocess.run(
-                ['patch', '-p1', '-d', tmpdir],
+                ['patch', f'-p{prefix}', '-d', tmpdir],
                 input=p.patch,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

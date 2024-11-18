@@ -23,6 +23,51 @@ index 000000000000..000000000000 100644
 +2
 """
 
+FORMAT_PATCH_XMO = """\
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 3 Discos Down <bar@example.org>
+Date: Sat, 24 Apr 2021 17:09:14 +0000
+Subject: [PATCH] [I18N] whop
+
+whop whop
+---
+ b | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ 
+diff --git a/b b/b
+index 000000000000..000000000000 100644
+--- a/b
++++ b/b
+@@ -1,1 +1,1 @@
+-1
++2
+-- 
+2.46.2
+"""
+
+# slightly different format than the one I got, possibly because older?
+FORMAT_PATCH_MAT = """\
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 3 Discos Down <bar@example.org>
+Date: Sat, 24 Apr 2021 17:09:14 +0000
+Subject: [PATCH 1/1] [I18N] whop
+
+whop whop
+---
+ b | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ 
+diff --git b b
+index 000000000000..000000000000 100644
+--- b
++++ b
+@@ -1,1 +1,1 @@
+-1
++2
+-- 
+2.34.1
+"""
+
 
 @pytest.fixture(autouse=True)
 def _setup(repo):
@@ -148,41 +193,34 @@ def test_apply_udiff(env, project, repo, users):
     assert not p.active
 
 
-def test_apply_format_patch(env, project, repo, users):
+@pytest.mark.parametrize('patch', [
+    pytest.param(FORMAT_PATCH_XMO, id='xmo'),
+    pytest.param(FORMAT_PATCH_MAT, id='mat'),
+])
+def test_apply_format_patch(env, project, repo, users, patch):
     p = env['runbot_merge.patch'].create({
         'target': project.branch_ids.id,
         'repository': project.repo_ids.id,
-        'patch': """\
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: 3 Discos Down <bar@example.org>
-Date: Sat, 24 Apr 2021 17:09:14 +0000
-Subject: [PATCH] whop
-
-whop whop
----
- b | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
- 
-diff --git a/b b/b
-index 000000000000..000000000000 100644
---- a/b
-+++ b/b
-@@ -1,1 +1,1 @@
--1
-+2
--- 
-2.46.2
-""",
+        'patch': patch,
     })
 
     env.run_crons()
 
+    bot = env['res.users'].browse((1,))
+    assert p.message_ids[::-1].mapped(lambda m: (
+        m.author_id.display_name,
+        m.body,
+        list(map(read_tracking_value, m.tracking_value_ids)),
+    )) == [
+        (p.create_uid.partner_id.display_name, '<p>Unstaged direct-application patch created</p>', []),
+        (bot.partner_id.display_name, "", [('active', 1, 0)]),
+    ]
     HEAD = repo.commit('master')
     assert repo.read_tree(HEAD) == {
         'a': '2',
         'b': '2\n',
     }
-    assert HEAD.message == "whop\n\nwhop whop"
+    assert HEAD.message == "[I18N] whop\n\nwhop whop"
     assert HEAD.author['name'] == "3 Discos Down"
     assert HEAD.author['email'] == "bar@example.org"
     assert not p.active
