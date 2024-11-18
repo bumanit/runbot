@@ -199,6 +199,7 @@ class BuildError(models.Model):
                     error.team_id = previous_error.team_id
             previous_error.error_content_ids.write({'error_id': self})
             if not previous_error.test_tags:
+                previous_error.message_post(body=Markup('Error merged into %s') % error._get_form_link())
                 previous_error.active = False
 
     @api.model
