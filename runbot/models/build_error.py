@@ -462,22 +462,26 @@ class BuildErrorContent(models.Model):
         base_error_content = self[0]
         base_error = base_error_content.error_id
         errors = self.env['runbot.build.error']
+        links_to_remove = self.env['runbot.build.error.link']
+        content_to_remove = self.env['runbot.build.error.content']
         for error_content in self[1:]:
             assert base_error_content.fingerprint == error_content.fingerprint, f'Errors {base_error_content.id} and {error_content.id} have a different fingerprint'
-            for build_error_link in error_content.build_error_link_ids:
-                if build_error_link.build_id not in base_error_content.build_error_link_ids.build_id:
-                    build_error_link.error_content_id = base_error_content
-                else:
-                    # as the relation already exists and was not transferred we can remove the old one
-                    build_error_link.unlink()
+            links_to_relink = error_content.build_error_link_ids.filtered(lambda rec: rec.build_id.id not in base_error_content.build_error_link_ids.build_id.ids)
+            links_to_remove |= error_content.build_error_link_ids - links_to_relink  # a link already exists to the base error
+
+            links_to_relink.error_content_id = base_error_content
+
             if error_content.error_id != base_error_content.error_id:
                 base_error.message_post(body=Markup('Error content coming from %s was merged into this one') % error_content.error_id._get_form_link())
                 if not base_error.active and error_content.error_id.active:
                     base_error.active = True
             errors |= error_content.error_id
-            error_content.unlink()
+            content_to_remove |= error_content
+        content_to_remove.unlink()
+        links_to_remove.unlink()
+
         for error in errors:
-            error.message_post(body=Markup('Some error contents from this error where merged into %s') % base_error._get_form_link())
+            error.message_post(body=Markup('Some error contents from this error where moved into %s') % base_error._get_form_link())
             if not error.error_content_ids:
                 base_error._merge(error)
 
