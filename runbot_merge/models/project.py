@@ -148,6 +148,18 @@ class Project(models.Model):
             ('project_id.staging_enabled', '=', True),
         ]):
             try:
+                with self.env.cr.savepoint():
+                    if not self.env['runbot_merge.patch']._apply_patches(branch):
+                        self.env.ref("runbot_merge.staging_cron")._trigger()
+                        return
+
+            except Exception:
+                _logger.exception("Failed to apply patches to branch %r", branch.name)
+            else:
+                if commit:
+                    self.env.cr.commit()
+
+            try:
                 with self.env.cr.savepoint(), \
                     sentry_sdk.start_span(description=f'create staging {branch.name}') as span:
                     span.set_tag('branch', branch.name)

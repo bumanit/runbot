@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import base64
-import contextlib
 import logging
-import os
 import re
+import secrets
 from collections import defaultdict
 from collections.abc import Iterator
 
@@ -195,7 +193,7 @@ class Batch(models.Model):
 
     @api.depends(
         "merge_date",
-        "prs.error", "prs.draft", "prs.squash", "prs.merge_method",
+        "prs.error", "prs.draft",
         "skipchecks",
         "prs.status", "prs.reviewed_by", "prs.target",
     )
@@ -208,7 +206,7 @@ class Batch(models.Model):
             elif len(targets := batch.prs.mapped('target')) > 1:
                 batch.blocked = f"Multiple target branches: {', '.join(targets.mapped('name'))!r}"
             elif blocking := batch.prs.filtered(
-                lambda p: p.error or p.draft or not (p.squash or p.merge_method)
+                lambda p: p.error or p.draft
             ):
                 batch.blocked = "Pull request(s) %s blocked." % ', '.join(blocking.mapped('display_name'))
             elif not batch.skipchecks and (unready := batch.prs.filtered(
@@ -323,14 +321,12 @@ class Batch(models.Model):
         new_branch = '%s-%s-%s-fw' % (
             target.name,
             base.refname,
-            # avoid collisions between fp branches (labels can be reused
-            # or conflict especially as we're chopping off the owner)
-            base64.urlsafe_b64encode(os.urandom(3)).decode()
+            secrets.token_urlsafe(3),
         )
         conflicts = {}
         for pr in prs:
             repo = git.get_local(pr.repository)
-            conflicts[pr], head = pr._create_fp_branch(repo, target)
+            conflicts[pr], head = pr._create_port_branch(repo, target, forward=True)
 
             repo.push(git.fw_url(pr.repository), f"{head}:refs/heads/{new_branch}")
 
@@ -352,11 +348,11 @@ class Batch(models.Model):
                 for p in root | source
             )
 
-            title, body = re.match(r'(?P<title>[^\n]+)\n*(?P<body>.*)', message, flags=re.DOTALL).groups()
+            title, body = re.fullmatch(r'(?P<title>[^\n]+)\n*(?P<body>.*)', message, flags=re.DOTALL).groups()
             r = gh.post(f'https://api.github.com/repos/{pr.repository.name}/pulls', json={
                 'base': target.name,
                 'head': f'{owner}:{new_branch}',
-                'title': '[FW]' + (' ' if title[0] != '[' else '') + title,
+                'title': '[FW]' + ('' if title[0] == '[' else ' ') + title,
                 'body': body
             })
             if not r.ok:
@@ -432,7 +428,7 @@ class Batch(models.Model):
                 _logger.info('-> no parent %s (%s)', batch, prs)
                 continue
             if not force_fw and batch.source.fw_policy != 'skipci' \
-                    and (invalid := batch.prs.filtered(lambda p: p.state not in ['validated', 'ready'])):
+                    and (invalid := batch.prs.filtered(lambda p: p.status != 'success')):
                 _logger.info(
                     '-> wrong state %s (%s)',
                     batch,

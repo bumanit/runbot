@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import logging
 import json
+from datetime import datetime, timedelta
 
 import sentry_sdk
 import werkzeug.exceptions
@@ -210,12 +211,8 @@ def handle_pr(env, event):
                 updates['target'] = branch.id
                 updates['squash'] = pr['commits'] == 1
 
-        # turns out github doesn't bother sending a change key if the body is
-        # changing from empty (None), therefore ignore that entirely, just
-        # generate the message and check if it changed
-        message = utils.make_message(pr)
-        if message != pr_obj.message:
-            updates['message'] = message
+        if 'title' in event['changes'] or 'body' in event['changes']:
+            updates['message'] = utils.make_message(pr)
 
         _logger.info("update: %s = %s (by %s)", pr_obj.display_name, updates, event['sender']['login'])
         if updates:
@@ -286,9 +283,6 @@ def handle_pr(env, event):
             _logger.error("PR %s sync %s -> %s => failure (closed)", pr_obj.display_name, pr_obj.head, pr['head']['sha'])
             return "It's my understanding that closed/merged PRs don't get sync'd"
 
-        if pr_obj.state == 'ready':
-            pr_obj.unstage("updated by %s", event['sender']['login'])
-
         _logger.info(
             "PR %s sync %s -> %s by %s => reset to 'open' and squash=%s",
             pr_obj.display_name,
@@ -297,6 +291,12 @@ def handle_pr(env, event):
             event['sender']['login'],
             pr['commits'] == 1
         )
+        if pr['base']['ref'] != pr_obj.target.name:
+            env['runbot_merge.fetch_job'].create({
+                'repository': pr_obj.repository.id,
+                'number': pr_obj.number,
+                'commits_at': datetime.now() + timedelta(minutes=5),
+            })
 
         pr_obj.write({
             'reviewed_by': False,
@@ -362,7 +362,8 @@ def handle_status(env, event):
         event['context']: {
             'state': event['state'],
             'target_url': event['target_url'],
-            'description': event['description']
+            'description': event['description'],
+            'updated_at': datetime.now().isoformat(timespec='seconds'),
         }
     })
     # create status, or merge update into commit *unless* the update is already
@@ -374,7 +375,7 @@ def handle_status(env, event):
             SET to_check = true,
                 statuses = c.statuses::jsonb || EXCLUDED.statuses::jsonb
             WHERE NOT c.statuses::jsonb @> EXCLUDED.statuses::jsonb
-    """, [event['sha'], status_value])
+    """, [event['sha'], status_value], log_exceptions=False)
     env.ref("runbot_merge.process_updated_commits")._trigger()
 
     return 'ok'
@@ -431,7 +432,9 @@ def _handle_comment(env, repo, issue, comment, target=None):
     if not repository.project_id._find_commands(comment['body'] or ''):
         return "No commands, ignoring"
 
-    pr = env['runbot_merge.pull_requests']._get_or_schedule(repo, issue, target=target)
+    pr = env['runbot_merge.pull_requests']._get_or_schedule(
+        repo, issue, target=target, commenter=comment['user']['login'],
+    )
     if not pr:
         return "Unknown PR, scheduling fetch"
 

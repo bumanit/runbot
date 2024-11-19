@@ -1,9 +1,15 @@
 <odoo>
+    <record model="res.groups" id="group_patcher">
+        <field name="name">Mergebot Patcher</field>
+    </record>
     <record model="res.groups" id="group_admin">
         <field name="name">Mergebot Administrator</field>
     </record>
     <record model="res.groups" id="base.group_system">
-        <field name="implied_ids" eval="[(4, ref('runbot_merge.group_admin'))]"/>
+        <field name="implied_ids" eval="[
+            (4, ref('runbot_merge.group_admin')),
+            (4, ref('runbot_merge.group_patcher')),
+        ]"/>
     </record>
     <record model="res.groups" id="status">
         <field name="name">Mergebot Status Sender</field>

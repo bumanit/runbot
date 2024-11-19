@@ -29,6 +29,7 @@ def dfm(repository: str, text: str) -> Markup:
     """
     t = DFM_CONTEXT_REPO.set(repository)
     try:
+        dfm_renderer.reset()
         return Markup(dfm_renderer.convert(escape(text)))
     finally:
         DFM_CONTEXT_REPO.reset(t)

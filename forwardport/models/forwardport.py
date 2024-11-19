@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 import builtins
-import contextlib
 import logging
 import re
-import uuid
 from contextlib import ExitStack
 from datetime import datetime, timedelta
 
 import requests
 import sentry_sdk
+from babel.dates import format_timedelta
 from dateutil import relativedelta
 
-from odoo import fields, models
+from odoo import api, fields, models
 from odoo.addons.runbot_merge import git
 from odoo.addons.runbot_merge.github import GH
 
@@ -75,8 +74,10 @@ class ForwardPortTasks(models.Model, Queue):
         ('complete', 'Complete ported batches'),
     ], required=True)
     retry_after = fields.Datetime(required=True, default='1900-01-01 01:01:01')
+    retry_after_relative = fields.Char(compute="_compute_retry_after_relative")
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
+    @api.model_create_multi
     def create(self, vals_list):
         self.env.ref('forwardport.port_forward')._trigger()
         return super().create(vals_list)
@@ -91,6 +92,15 @@ class ForwardPortTasks(models.Model, Queue):
         return super()._search_domain() + [
             ('retry_after', '<=', fields.Datetime.to_string(fields.Datetime.now())),
         ]
+
+    @api.depends('retry_after')
+    def _compute_retry_after_relative(self):
+        now = fields.Datetime.now()
+        for t in self:
+            if t.retry_after <= now:
+                t.retry_after_relative = ""
+            else:
+                t.retry_after_relative = format_timedelta(t.retry_after - now, locale=t.env.lang)
 
     def _on_failure(self):
         super()._on_failure()
@@ -203,7 +213,7 @@ class ForwardPortTasks(models.Model, Queue):
             # NOTE: ports the new source everywhere instead of porting each
             #       PR to the next step as it does not *stop* on conflict
             repo = git.get_local(source.repository)
-            conflict, head = source._create_fp_branch(repo, target)
+            conflict, head = source._create_port_branch(repo, target, forward=True)
             repo.push(git.fw_url(pr.repository), f'{head}:refs/heads/{ref}')
 
             remote_target = repository.fp_remote_target
@@ -270,6 +280,7 @@ class UpdateQueue(models.Model, Queue):
     original_root = fields.Many2one('runbot_merge.pull_requests')
     new_root = fields.Many2one('runbot_merge.pull_requests')
 
+    @api.model_create_multi
     def create(self, vals_list):
         self.env.ref('forwardport.updates')._trigger()
         return super().create(vals_list)
@@ -302,7 +313,7 @@ class UpdateQueue(models.Model, Queue):
                     return
 
                 repo = git.get_local(previous.repository)
-                conflicts, new_head = previous._create_fp_branch(repo, child.target)
+                conflicts, new_head = previous._create_port_branch(repo, child.target, forward=True)
 
                 if conflicts:
                     _, out, err, _ = conflicts
@@ -359,6 +370,7 @@ class DeleteBranches(models.Model, Queue):
 
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
+    @api.model_create_multi
     def create(self, vals_list):
         self.env.ref('forwardport.remover')._trigger(datetime.now() - MERGE_AGE)
         return super().create(vals_list)

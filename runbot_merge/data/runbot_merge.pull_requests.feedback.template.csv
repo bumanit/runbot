@@ -16,7 +16,7 @@ runbot_merge.pr.load.unmanaged,"Branch `{pr[base][ref]}` is not within my remit,
 
 pr: pull request (github object)
 Repository: repository object (???)"
-runbot_merge.pr.load.fetched,"{pr.ping}I didn't know about this PR and had to retrieve its information, you may have to re-approve it as I didn't see previous commands.","Notifies that we did retrieve an unknown PR (either by request or as side effect of an interaction).
+runbot_merge.pr.load.fetched,"{ping}I didn't know about this PR and had to retrieve its information, you may have to re-approve it as I didn't see previous commands.","Notifies that we did retrieve an unknown PR (either by request or as side effect of an interaction).
 
 Pr: pr object we just created"
 runbot_merge.pr.branch.disabled,"{pr.ping}the target branch {pr.target.name!r} has been disabled, you may want to close this PR.","Notifies that the target branch for this PR was deactivated.

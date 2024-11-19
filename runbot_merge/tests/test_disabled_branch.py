@@ -1,8 +1,11 @@
 import pytest
 
-from utils import seen, Commit, pr_page
+from utils import seen, Commit, pr_page, to_pr
 
-def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, config, users, page):
+
+pytestmark = pytest.mark.defaultstatuses
+
+def test_existing_pr_disabled_branch(env, project, repo, config, users, page):
     """ PRs to disabled branches are ignored, but what if the PR exists *before*
     the branch is disabled?
     """
@@ -10,20 +13,11 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     # new work
     assert env['base'].run_crons()
 
-    repo = make_repo('repo')
-    project.branch_ids.sequence = 0
     project.write({'branch_ids': [
+        (1, project.branch_ids.id, {'sequence': 0}),
         (0, 0, {'name': 'other', 'sequence': 1}),
         (0, 0, {'name': 'other2', 'sequence': 2}),
     ]})
-    repo_id = env['runbot_merge.repository'].create({
-        'project_id': project.id,
-        'name': repo.name,
-        'status_ids': [(0, 0, {'context': 'status'})],
-        'group_id': False,
-    })
-    setreviewers(*project.repo_ids)
-    env['runbot_merge.events_sources'].create({'repository': repo.name})
 
     with repo:
         [m] = repo.make_commits(None, Commit('root', tree={'a': '1'}), ref='heads/master')
@@ -32,14 +26,11 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
 
         [c] = repo.make_commits(ot, Commit('wheee', tree={'b': '2'}))
         pr = repo.make_pr(title="title", body='body', target='other', head=c)
-        repo.post_status(c, 'success', 'status')
+        repo.post_status(c, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
-    pr_id = env['runbot_merge.pull_requests'].search([
-        ('repository', '=', repo_id.id),
-        ('number', '=', pr.number),
-    ])
+    pr_id = to_pr(env, pr)
     branch_id = pr_id.target
     assert pr_id.staging_id
     staging_id = branch_id.active_staging_id
@@ -47,9 +38,6 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
 
     # staging of `pr` should have generated a staging branch
     _ = repo.get_ref('heads/staging.other')
-    # stagings should not need a tmp branch anymore, so this should not exist
-    with pytest.raises(AssertionError, match=r'Not Found'):
-        repo.get_ref('heads/tmp.other')
 
     # disable branch "other"
     branch_id.active = False
@@ -74,7 +62,7 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     [target] = p.cssselect('table tr.bg-info')
     assert 'inactive' in target.classes
     assert target[0].text_content() == "other"
-
+    env.run_crons()
     assert pr.comments == [
         (users['reviewer'], "hansen r+"),
         seen(env, pr, users),
@@ -82,15 +70,27 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     ]
 
     with repo:
-        [c2] = repo.make_commits(ot, Commit('wheee', tree={'b': '3'}))
-        repo.update_ref(pr.ref, c2, force=True)
+        [c2] = repo.make_commits(ot, Commit('wheee', tree={'b': '3'}), ref=pr.ref, make=False)
+    env.run_crons()
+    assert pr.comments[3] == (
+        users['user'],
+        "This PR targets the disabled branch {repository}:{target}, it needs to be retargeted before it can be merged.".format(
+            repository=repo.name,
+            target="other",
+        )
+    )
     assert pr_id.head == c2, "pr should be aware of its update"
 
     with repo:
         pr.base = 'other2'
-        repo.post_status(c2, 'success', 'status')
+        repo.post_status(c2, 'success')
         pr.post_comment('hansen rebase-ff r+', config['role_reviewer']['token'])
     env.run_crons()
+
+    assert pr.comments[4:] == [
+        (users['reviewer'], 'hansen rebase-ff r+'),
+        (users['user'], "Merge method set to rebase and fast-forward."),
+    ]
 
     assert pr_id.state == 'ready'
     assert pr_id.target == env['runbot_merge.branch'].search([('name', '=', 'other2')])
@@ -98,21 +98,10 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
 
     # staging of `pr` should have generated a staging branch
     _ = repo.get_ref('heads/staging.other2')
-    # stagings should not need a tmp branch anymore, so this should not exist
-    with pytest.raises(AssertionError, match=r'Not Found'):
-        repo.get_ref('heads/tmp.other2')
 
-def test_new_pr_no_branch(env, project, make_repo, setreviewers, users):
+def test_new_pr_no_branch(env, project, repo, users):
     """ A new PR to an *unknown* branch should be ignored and warn
     """
-    repo = make_repo('repo')
-    repo_id = env['runbot_merge.repository'].create({
-        'project_id': project.id,
-        'name': repo.name,
-        'status_ids': [(0, 0, {'context': 'status'})]
-    })
-    setreviewers(*project.repo_ids)
-    env['runbot_merge.events_sources'].create({'repository': repo.name})
 
     with repo:
         [m] = repo.make_commits(None, Commit('root', tree={'a': '1'}), ref='heads/master')
@@ -123,30 +112,18 @@ def test_new_pr_no_branch(env, project, make_repo, setreviewers, users):
     env.run_crons()
 
     assert not env['runbot_merge.pull_requests'].search([
-        ('repository', '=', repo_id.id),
+        ('repository', '=', project.repo_ids.id),
         ('number', '=', pr.number),
     ]), "the PR should not have been created in the backend"
     assert pr.comments == [
         (users['user'], "This PR targets the un-managed branch %s:other, it needs to be retargeted before it can be merged." % repo.name),
     ]
 
-def test_new_pr_disabled_branch(env, project, make_repo, setreviewers, users):
+def test_new_pr_disabled_branch(env, project, repo, users):
     """ A new PR to a *disabled* branch should be accepted (rather than ignored)
     but should warn
     """
-    repo = make_repo('repo')
-    repo_id = env['runbot_merge.repository'].create({
-        'project_id': project.id,
-        'name': repo.name,
-        'status_ids': [(0, 0, {'context': 'status'})]
-    })
-    env['runbot_merge.branch'].create({
-        'project_id': project.id,
-        'name': 'other',
-        'active': False,
-    })
-    setreviewers(*project.repo_ids)
-    env['runbot_merge.events_sources'].create({'repository': repo.name})
+    project.write({'branch_ids': [(0, 0, {'name': 'other', 'active': False})]})
 
     with repo:
         [m] = repo.make_commits(None, Commit('root', tree={'a': '1'}), ref='heads/master')
@@ -156,13 +133,40 @@ def test_new_pr_disabled_branch(env, project, make_repo, setreviewers, users):
         pr = repo.make_pr(title="title", body='body', target='other', head=c)
     env.run_crons()
 
-    pr_id = env['runbot_merge.pull_requests'].search([
-        ('repository', '=', repo_id.id),
-        ('number', '=', pr.number),
-    ])
+    pr_id = to_pr(env, pr)
     assert pr_id, "the PR should have been created in the backend"
     assert pr_id.state == 'opened'
     assert pr.comments == [
         (users['user'], "This PR targets the disabled branch %s:other, it needs to be retargeted before it can be merged." % repo.name),
         seen(env, pr, users),
+    ]
+
+def test_review_disabled_branch(env, project, repo, users, config):
+    with repo:
+        [m] = repo.make_commits(None, Commit("init", tree={'m': 'm'}), ref='heads/master')
+
+        [c] = repo.make_commits(m, Commit('pr', tree={'m': 'n'}))
+        pr = repo.make_pr(target="master", head=c)
+    env.run_crons()
+    target = project.branch_ids
+    target.active = False
+    env.run_crons()
+    with repo:
+        pr.post_comment("A normal comment", config['role_other']['token'])
+    with repo:
+        pr.post_comment("hansen r+", config['role_reviewer']['token'])
+    env.run_crons()
+
+    assert pr.comments == [
+        seen(env, pr, users),
+        (users['user'], "@{user} the target branch {target!r} has been disabled, you may want to close this PR.".format(
+            **users,
+            target=target.name,
+        )),
+        (users['other'], "A normal comment"),
+        (users['reviewer'], "hansen r+"),
+        (users['user'], "This PR targets the disabled branch {repository}:{target}, it needs to be retargeted before it can be merged.".format(
+            repository=repo.name,
+            target=target.name,
+        )),
     ]

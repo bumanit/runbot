@@ -6,7 +6,9 @@ import pathlib
 import resource
 import stat
 import subprocess
+from operator import methodcaller
 from typing import Optional, TypeVar, Union, Sequence, Tuple, Dict
+from collections.abc import Iterable, Mapping, Callable
 
 from odoo.tools.appdirs import user_cache_dir
 from .github import MergeError, PrCommit
@@ -75,6 +77,7 @@ class Repo:
         config.setdefault('stderr', subprocess.PIPE)
         self._config = config
         self._params = ()
+        self.runner = subprocess.run
 
     def __getattr__(self, name: str) -> 'GitCommand':
         return GitCommand(self, name.replace('_', '-'))
@@ -85,7 +88,7 @@ class Repo:
             + tuple(itertools.chain.from_iterable(('-c', p) for p in self._params + ALWAYS))\
             + args
         try:
-            return subprocess.run(args, preexec_fn=_bypass_limits, **opts)
+            return self.runner(args, preexec_fn=_bypass_limits, **opts)
         except subprocess.CalledProcessError as e:
             stream = e.stderr or e.stdout
             if stream:
@@ -244,6 +247,51 @@ class Repo:
             '-F', '-',
             *itertools.chain.from_iterable(('-p', p) for p in parents),
         )
+
+    def update_tree(self, tree: str, files: Mapping[str, Callable[[Self, str], str]]) -> str:
+        # FIXME: either ignore or process binary files somehow (how does git show conflicts in binary files?)
+        repo = self.stdout().with_config(stderr=None, text=True, check=False, encoding="utf-8")
+        for f, c in files.items():
+            new_contents = c(repo, f)
+            oid = repo \
+                .with_config(input=new_contents) \
+                .hash_object("-w", "--stdin", "--path", f) \
+                .stdout.strip()
+
+            # we need to rewrite every tree from the parent of `f`
+            while f:
+                f, _, local = f.rpartition("/")
+                # tree to update, `{tree}:` works as an alias for tree
+                lstree = repo.ls_tree(f"{tree}:{f}").stdout.splitlines(keepends=False)
+                new_tree = "".join(
+                    # tab before name is critical to the format
+                    f"{mode} {typ} {oid if name == local else sha}\t{name}\n"
+                    for mode, typ, sha, name in map(methodcaller("split", None, 3), lstree)
+                )
+                oid = repo.with_config(input=new_tree, check=True).mktree().stdout.strip()
+            tree = oid
+        return tree
+
+    def modify_delete(self, tree: str, files: Iterable[str]) -> str:
+        """Updates ``files`` in ``tree`` to add conflict markers to show them
+        as being modify/delete-ed, rather than have only the original content.
+
+        This is because having just content in a valid file is easy to miss,
+        causing file resurrections as they get committed rather than re-removed.
+
+        TODO: maybe extract the diff information compared to before they were removed? idk
+        """
+        def rewriter(r: Self, f: str) -> str:
+            contents = r.cat_file("-p", f"{tree}:{f}").stdout
+            return f"""\
+<<<\x3c<<< HEAD
+||||||| MERGE BASE
+=======
+{contents}
+>>>\x3e>>> FORWARD PORTED
+"""
+        return self.update_tree(tree, dict.fromkeys(files, rewriter))
+
 
 def check(p: subprocess.CompletedProcess) -> subprocess.CompletedProcess:
     if not p.returncode:
