@@ -185,31 +185,55 @@ class PullRequests(models.Model):
 
     reminder_backoff_factor = fields.Integer(default=-4, group_operator=None)
 
-    @api.model_create_single
-    def create(self, vals):
-        # PR opened event always creates a new PR, override so we can precreate PRs
-        existing = self.search([
-            ('repository', '=', vals['repository']),
-            ('number', '=', vals['number']),
-        ])
-        if existing:
-            return existing
+    @api.model_create_multi
+    def create(self, vals_list):
+        # we're doing a lot of weird processing so fast-path this case even if
+        # unlikely
+        if not vals_list:
+            return self.browse()
 
-        if vals.get('parent_id') and 'source_id' not in vals:
-            vals['source_id'] = self.browse(vals['parent_id']).root_id.id
-        pr = super().create(vals)
+        existings = []
+        to_create = []
+        for vals in vals_list:
+            # PR opened event always creates a new PR, override so we can precreate PRs
+            if existing := self.search([
+                ('repository', '=', vals['repository']),
+                ('number', '=', vals['number']),
+            ]):
+                existings.append(existing.id)
+            else:
+                existings.append(None)
+                to_create.append(vals)
+                if vals.get('parent_id') and 'source_id' not in vals:
+                    vals['source_id'] = self.browse(vals['parent_id']).root_id.id
 
-        # added a new PR to an already forward-ported batch: port the PR
-        if self.env['runbot_merge.batch'].search_count([
-            ('parent_id', '=', pr.batch_id.id),
-        ]):
-            self.env['forwardport.batches'].create({
-                'batch_id': pr.batch_id.id,
-                'source': 'complete',
-                'pr_id': pr.id,
-            })
+        # no PR to create, return the existing ones
+        if not to_create:
+            return self.browse(existings)
 
-        return pr
+        prs = super().create(to_create)
+
+        for pr in prs:
+            # added a new PR to an already forward-ported batch: port the PR
+            if self.env['runbot_merge.batch'].search_count([
+                ('parent_id', '=', pr.batch_id.id),
+            ]):
+                self.env['forwardport.batches'].create({
+                    'batch_id': pr.batch_id.id,
+                    'source': 'complete',
+                    'pr_id': pr.id,
+                })
+
+        # no existing PR, return all the created ones
+        if len(to_create) == len(vals_list):
+            return prs
+
+        # merge existing and created
+        prs = iter(prs)
+        return self.browse((
+            existing or next(prs).id
+            for existing in existings
+        ))
 
     def write(self, vals):
         # if the PR's head is updated, detach (should split off the FP lines as this is not the original code)

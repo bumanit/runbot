@@ -82,15 +82,16 @@ class Repository(models.Model):
 All substitutions are tentatively applied sequentially to the input.
 """)
 
-    @api.model
-    def create(self, vals):
-        if 'status_ids' in vals:
-            return super().create(vals)
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if 'status_ids' in vals:
+                continue
 
-        st = vals.pop('required_statuses', 'legal/cla,ci/runbot')
-        if st:
-            vals['status_ids'] = [(0, 0, {'context': c}) for c in st.split(',')]
-        return super().create(vals)
+            if st := vals.pop('required_statuses', 'legal/cla,ci/runbot'):
+                vals['status_ids'] = [(0, 0, {'context': c}) for c in st.split(',')]
+
+        return super().create(vals_list)
 
     def write(self, vals):
         st = vals.pop('required_statuses', None)
@@ -102,7 +103,7 @@ All substitutions are tentatively applied sequentially to the input.
         return github.GH(self.project_id[token_field], self.name)
 
     def _auto_init(self):
-        res = super(Repository, self)._auto_init()
+        res = super()._auto_init()
         tools.create_unique_index(
             self._cr, 'runbot_merge_unique_repo', self._table, ['name'])
         return res
@@ -294,7 +295,7 @@ class Branch(models.Model):
     staging_enabled = fields.Boolean(default=True)
 
     def _auto_init(self):
-        res = super(Branch, self)._auto_init()
+        res = super()._auto_init()
         tools.create_unique_index(
             self._cr, 'runbot_merge_unique_branch_per_repo',
             self._table, ['name', 'project_id'])
@@ -1359,36 +1360,44 @@ For your own safety I've ignored *everything in your entire comment*.
             ])
         return batch or batch.create({})
 
-    @api.model
-    def create(self, vals):
-        batch = self._get_batch(target=vals['target'], label=vals['label'])
-        vals['batch_id'] = batch.id
-        if 'limit_id' not in vals:
-            limits = {p.limit_id for p in batch.prs}
-            if len(limits) == 1:
-                vals['limit_id'] = limits.pop().id
-            elif limits:
-                repo = self.env['runbot_merge.repository'].browse(vals['repository'])
-                _logger.warning(
-                    "Unable to set limit on %s#%s: found multiple limits in batch (%s)",
-                    repo.name, vals['number'],
-                    ', '.join(
-                        f'{p.display_name} => {p.limit_id.name}'
-                        for p in batch.prs
+    @api.model_create_multi
+    def create(self, vals_list):
+        batches = {}
+        for vals in vals_list:
+            batch_key = vals['target'], vals['label']
+            batch = batches.get(batch_key)
+            if batch is None:
+                batch = batches[batch_key] = self._get_batch(target=vals['target'], label=vals['label'])
+            vals['batch_id'] = batch.id
+
+            if 'limit_id' not in vals:
+                limits = {p.limit_id for p in batch.prs}
+                if len(limits) == 1:
+                    vals['limit_id'] = limits.pop().id
+                elif limits:
+                    repo = self.env['runbot_merge.repository'].browse(vals['repository'])
+                    _logger.warning(
+                        "Unable to set limit on %s#%s: found multiple limits in batch (%s)",
+                        repo.name, vals['number'],
+                        ', '.join(
+                            f'{p.display_name} => {p.limit_id.name}'
+                            for p in batch.prs
+                        )
                     )
+
+        prs = super().create(vals_list)
+
+        for pr in prs:
+            c = self.env['runbot_merge.commit'].search([('sha', '=', pr.head)])
+            pr._validate(c.statuses)
+
+            if pr.state not in ('closed', 'merged'):
+                self.env.ref('runbot_merge.pr.created')._send(
+                    repository=pr.repository,
+                    pull_request=pr.number,
+                    format_args={'pr': pr},
                 )
-
-        pr = super().create(vals)
-        c = self.env['runbot_merge.commit'].search([('sha', '=', pr.head)])
-        pr._validate(c.statuses)
-
-        if pr.state not in ('closed', 'merged'):
-            self.env.ref('runbot_merge.pr.created')._send(
-                repository=pr.repository,
-                pull_request=pr.number,
-                format_args={'pr': pr},
-            )
-        return pr
+        return prs
 
     def _from_gh(self, description, author=None, branch=None, repo=None):
         if repo is None:
@@ -1457,11 +1466,14 @@ For your own safety I've ignored *everything in your entire comment*.
 
         newhead = vals.get('head')
         if newhead:
-            if pid := self.env.cr.precommit.data.get('change-author'):
-                writer = self.env['res.partner'].browse(pid)
-            else:
-                writer = self.env.user.partner_id
-            self.unstage("updated by %s", writer.github_login or writer.name)
+            authors = self.env.cr.precommit.data.get(f'mail.tracking.author.{self._name}', {})
+            for p in self:
+                if pid := authors.get(p.id):
+                    writer = self.env['res.partner'].browse(pid)
+                else:
+                    writer = self.env.user.partner_id
+                p.unstage("updated by %s", writer.github_login or writer.name)
+            # this can be batched
             c = self.env['runbot_merge.commit'].search([('sha', '=', newhead)])
             self._validate(c.statuses)
         return w
@@ -1754,18 +1766,20 @@ class Tagging(models.Model):
     tags_remove = fields.Char(required=True, default='[]')
     tags_add = fields.Char(required=True, default='[]')
 
-    def create(self, values):
-        if values.pop('state_from', None):
-            values['tags_remove'] = ALL_TAGS
-        if 'state_to' in values:
-            values['tags_add'] = _TAGS[values.pop('state_to')]
-        if not isinstance(values.get('tags_remove', ''), str):
-            values['tags_remove'] = json.dumps(list(values['tags_remove']))
-        if not isinstance(values.get('tags_add', ''), str):
-            values['tags_add'] = json.dumps(list(values['tags_add']))
-        if values:
+    @api.model_create_multi
+    def create(self, vals_list):
+        for values in vals_list:
+            if values.pop('state_from', None):
+                values['tags_remove'] = ALL_TAGS
+            if 'state_to' in values:
+                values['tags_add'] = _TAGS[values.pop('state_to')]
+            if not isinstance(values.get('tags_remove', ''), str):
+                values['tags_remove'] = json.dumps(list(values['tags_remove']))
+            if not isinstance(values.get('tags_add', ''), str):
+                values['tags_add'] = json.dumps(list(values['tags_add']))
+        if any(vals_list):
             self.env.ref('runbot_merge.labels_cron')._trigger()
-        return super().create(values)
+        return super().create(vals_list)
 
     def _send(self):
         # noinspection SqlResolve
@@ -1969,16 +1983,17 @@ class Commit(models.Model):
     commit_ids = fields.Many2many('runbot_merge.stagings', relation='runbot_merge_stagings_commits', column2='staging_id', column1='commit_id')
     pull_requests = fields.One2many('runbot_merge.pull_requests', compute='_compute_prs')
 
-    @api.model_create_single
-    def create(self, values):
-        values['to_check'] = True
-        r = super(Commit, self).create(values)
+    @api.model_create_multi
+    def create(self, vals_list):
+        for values in vals_list:
+            values['to_check'] = True
+        r = super().create(vals_list)
         self.env.ref("runbot_merge.process_updated_commits")._trigger()
         return r
 
     def write(self, values):
         values.setdefault('to_check', True)
-        r = super(Commit, self).write(values)
+        r = super().write(values)
         if values['to_check']:
             self.env.ref("runbot_merge.process_updated_commits")._trigger()
         return r
@@ -2023,7 +2038,7 @@ class Commit(models.Model):
     ]
 
     def _auto_init(self):
-        res = super(Commit, self)._auto_init()
+        res = super()._auto_init()
         self._cr.execute("""
             CREATE INDEX IF NOT EXISTS runbot_merge_unique_statuses
             ON runbot_merge_commit
