@@ -99,7 +99,7 @@ def parse_format_patch(p: Patch) -> ParseResult:
     name, email = parseaddr(m['from'])
     author = (name, email, m['date'])
     msg = re.sub(r'^\[PATCH( \d+/\d+)?\] ', '', m['subject'])
-    body, _, rest = m.get_content().partition('---\n')
+    body, _, rest = m.get_payload().partition('---\n')
     if body:
         msg += '\n\n' + body
 
@@ -300,14 +300,14 @@ class Patch(models.Model):
              tempfile.TemporaryDirectory() as tmpdir:
             tf.extractall(tmpdir)
             patch = subprocess.run(
-                ['patch', f'-p{prefix}', '-d', tmpdir],
+                ['patch', f'-p{prefix}', '--directory', tmpdir, '--verbose'],
                 input=p.patch,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 encoding='utf-8',
             )
             if patch.returncode:
-                raise PatchFailure(patch.stdout)
+                raise PatchFailure("\n---------\n".join(filter(None, [p.patch, patch.stdout.strip(), patch.stderr.strip()])))
             new_tree = r.update_tree(self.target.name, files)
 
         sha = r.stdout().with_config(encoding='utf-8')\

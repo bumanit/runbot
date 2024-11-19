@@ -2,7 +2,7 @@ import xmlrpc.client
 
 import pytest
 
-from utils import Commit, read_tracking_value
+from utils import Commit, read_tracking_value, matches
 
 # basic udiff / show style patch, updates `b` from `1` to `2`
 BASIC_UDIFF = """\
@@ -255,7 +255,7 @@ def test_patch_conflict(env, project, repo, users):
         [],
     ), (
         "Unable to apply patch",
-        "<p>patching file b<br>Hunk #1 FAILED at 1.<br>1 out of 1 hunk FAILED -- saving rejects to file b.rej<br></p>",
+        matches("$$"),  # feedback from patch can vary
         [],
     ), (
         False, '', [('active', 1, 0)]
