@@ -2,6 +2,7 @@ import getpass
 import logging
 import os
 import re
+import docker
 from odoo import api, fields, models
 from odoo.addons.base.models.ir_qweb import QWebException
 
@@ -155,8 +156,15 @@ class Dockerfile(models.Model):
         return copied_record
 
     def _compute_last_successful_result(self):
+        rg = self.env['runbot.docker_build_result']._read_group(
+            [('result', '=', 'success'), ('dockerfile_id', 'in', self.ids)],
+            ['dockerfile_id'],
+            ['id:max'],
+        )
+        result_ids = dict(rg)
+
         for record in self:
-            record.last_successful_result = next((result for result in record.build_results if result.result == 'success'), record.build_results.browse())
+            record.last_successful_result = result_ids.get(record)
 
     @api.depends('bundle_ids', 'referencing_dockerlayer_ids', 'project_ids', 'version_ids')
     def _compute_use_count(self):
@@ -287,6 +295,35 @@ class Dockerfile(models.Model):
                 'content': 'USER {USERNAME}',
             })
 
+    def _get_docker_metadata(self, image_id):
+        _logger.info(f'Fetching metadata for image {image_id}')
+        metadata = {}
+        commands = {
+            'release': 'lsb_release -ds',
+            'python': 'python3 --version',
+            'chrome': 'google-chrome --version',
+            'psql': 'psql --version',
+            'pip_packages': 'python3 -m pip freeze',
+            'debian_packages': "dpkg-query -W -f '${Package}==${Version}\n'",
+        }
+        if image_id:
+            try:
+                docker_client = docker.from_env()
+                for key, command in commands.items():
+                    name = f"GetDockerInfos_{image_id}_{key}"
+                    try:
+                        result = docker_client.containers.run(image_id, name=name,command=['/bin/bash', '-c', command], detach=False, remove=True)
+                        result = result.decode('utf-8').strip()
+                        if 'packages' in key:
+                            result = result.split('\n')
+                    except docker.errors.ContainerError:
+                        result = None
+                    metadata[key] = result
+            except Exception as e:
+                _logger.exception(f'Error while fetching metadata for image {image_id}')
+                return {'error': str(e)}
+        return metadata
+
     def _build(self, host=None):
         docker_build_path = self.env['runbot.runbot']._path('docker', self.image_tag)
         os.makedirs(docker_build_path, exist_ok=True)
@@ -322,7 +359,10 @@ class Dockerfile(models.Model):
             if previous_result.content != docker_build_result_values['content']:  # docker image changed
                 should_save_result = True
 
+
         if should_save_result:
+            if success:
+                docker_build_result_values['metadata'] = self._get_docker_metadata(docker_build_result_values['identifier'])
             result = self.env['runbot.docker_build_result'].create(docker_build_result_values)
             if not success:
                 message = f'Build failure, check results for more info ({result.summary})'

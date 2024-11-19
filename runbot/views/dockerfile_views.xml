@@ -187,6 +187,9 @@
               <page string="Content">
                 <field name="content"/>
               </page>
+              <page string="Metadata">
+                <field name="metadata"/>
+              </page>
             </notebook>
           </sheet>
         </form>
