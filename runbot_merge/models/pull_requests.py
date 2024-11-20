@@ -1460,9 +1460,7 @@ For your own safety I've ignored *everything in your entire comment*.
         if newhead:
             authors = self.env.cr.precommit.data.get(f'mail.tracking.author.{self._name}', {})
             for p in self:
-                if pid := authors.get(p.id):
-                    writer = self.env['res.partner'].browse(pid)
-                else:
+                if not (writer := authors.get(p.id)):
                     writer = self.env.user.partner_id
                 p.unstage("updated by %s", writer.github_login or writer.name)
             # this can be batched
