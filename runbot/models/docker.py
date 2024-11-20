@@ -354,7 +354,11 @@ class Dockerfile(models.Model):
             # identifier changed
             if image_id != previous_result.identifier:
                 should_save_result = True
-            if previous_result.output != docker_build_result_values['output']:  # to discuss
+            def clean_output(output):
+                if not output:
+                    return ''
+                return '\n'.join([line for line in output.split('\n') if not line.startswith('Downloading')])
+            if clean_output(previous_result.output) != clean_output(docker_build_result_values['output']):  # to discuss
                 should_save_result = True
             if previous_result.content != docker_build_result_values['content']:  # docker image changed
                 should_save_result = True
