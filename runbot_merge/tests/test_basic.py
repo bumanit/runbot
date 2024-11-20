@@ -186,9 +186,9 @@ def test_trivial_flow(env, repo, page, users, config):
         # reviewer approved changing the state and setting reviewer as reviewer
         # plus set merge method
         ('Reviewer', '', [
-            ('state', 'Validated', 'Ready'),
             ('merge_method', '', 'rebase and merge, using the PR as merge commit message'),
             ('reviewed_by', '', 'Reviewer'),
+            ('state', 'Validated', 'Ready'),
         ]),
         # staging succeeded
         (matches('$$'), f'<p>staging {st.id} succeeded</p>', [
@@ -2672,7 +2672,7 @@ Please check and re-approve.
             ('<p>Pull Request created</p>', []),
             ('', [('head', c, '0'*40)]),
             ('', [('head', '0'*40, c), ('squash', 1, 0)]),
-            ('', [('state', 'Opened', 'Approved'), ('reviewed_by', '', 'Reviewer')]),
+            ('', [('reviewed_by', '', 'Reviewer'), ('state', 'Opened', 'Approved')]),
             (f'<p>statuses changed on {c}</p>', [('state', 'Approved', 'Ready')]),
         ]
         assert pr_id.staging_id
