@@ -122,18 +122,12 @@
                             <field name="active"/>
                         </group>
                     </group>
-                    <group attrs="{'invisible': [
-                        ('commit', '=', False),
-                        ('patch', '!=', False),
-                    ]}">
+                    <group invisible="patch and not commit">
                         <group colspan="4">
                             <field name="commit"/>
                         </group>
                     </group>
-                    <group attrs="{'invisible': [
-                        ('patch', '=', False),
-                        ('commit', '!=', False),
-                    ]}">
+                    <group invisible="commit and not patch">
                         <group colspan="4">
                             <field name="format" colspan="4"/>
                             <field name="patch" widget="ace"/>
