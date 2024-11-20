@@ -261,7 +261,7 @@ def test_force_ready(env, repo, config):
     pr_id.skipchecks = True
 
     assert pr_id.state == 'ready'
-    assert pr_id.status == 'pending'
+    assert pr_id.status == 'success'
     reviewer = env['res.users'].browse([env._uid]).partner_id
     assert pr_id.reviewed_by == reviewer
 
@@ -349,6 +349,7 @@ Currently available commands for @{user}:
 |-|-|
 |`help`|displays this help|
 |`fw=no`|does not forward-port this PR|
+|`fw=default`|forward-ports this PR normally|
 |`up to <branch>`|only ports this PR forward to the specified branch (included)|
 |`check`|fetches or refreshes PR metadata, resets mergebot state|
 

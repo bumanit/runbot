@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import collections
 import colorsys
+import datetime
 import hashlib
 import io
 import json
@@ -160,7 +161,7 @@ def raster_render(pr):
     # last-modified should be in RFC2822 format, which is what
     # email.utils.formatdate does (sadly takes a timestamp but...)
     last_modified = formatdate(max((
-        o.write_date
+        o.write_date or datetime.datetime.min
         for o in chain(
             project,
             repos,

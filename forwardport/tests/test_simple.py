@@ -251,7 +251,7 @@ def test_empty(env, config, make_repo, users):
     """ Cherrypick of an already cherrypicked (or separately implemented)
     commit -> conflicting pr.
     """
-    prod, other = make_basic(env, config, make_repo)
+    prod, other = make_basic(env, config, make_repo, statuses="default")
     # merge change to b
     with prod:
         [p_0] = prod.make_commits(
@@ -259,13 +259,11 @@ def test_empty(env, config, make_repo, users):
             ref='heads/early'
         )
         pr0 = prod.make_pr(target='b', head='early')
-        prod.post_status(p_0, 'success', 'legal/cla')
-        prod.post_status(p_0, 'success', 'ci/runbot')
+        prod.post_status(p_0, 'success')
         pr0.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     with prod:
-        prod.post_status('staging.b', 'success', 'legal/cla')
-        prod.post_status('staging.b', 'success', 'ci/runbot')
+        prod.post_status('staging.b', 'success')
 
     # merge same change to a afterwards
     with prod:
@@ -274,15 +272,13 @@ def test_empty(env, config, make_repo, users):
             ref='heads/late'
         )
         pr1 = prod.make_pr(target='a', head='late')
-        prod.post_status(p_1, 'success', 'legal/cla')
-        prod.post_status(p_1, 'success', 'ci/runbot')
+        prod.post_status(p_1, 'success')
         pr1.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
-
+        prod.post_status('staging.a', 'success')
     env.run_crons()
+
     assert prod.read_tree(prod.commit('a')) == {
         'f': 'e',
         'x': '0',
@@ -315,7 +311,8 @@ def test_empty(env, config, make_repo, users):
     }
 
     with prod:
-        validate_all([prod], [fp_id.head, fail_id.head])
+        prod.post_status(fp_id.head, 'success')
+        prod.post_status(fail_id.head, 'success')
     env.run_crons()
 
     # should not have created any new PR
@@ -379,12 +376,28 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         (users['reviewer'], 'hansen r+'),
         seen(env, pr1, users),
     ]
-    assert fail_pr.comments == [
-        seen(env, fail_pr, users),
-        conflict,
+    assert fail_pr.comments[2:] == [awaiting]*2,\
+        "message should not be triggered on closed PR"
+
+    with prod:
+        fail_pr.open()
+    with prod:
+        prod.post_status(fail_id.head, 'success')
+    assert fail_id.state == 'validated'
+    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    assert fail_pr.comments[2:] == [awaiting]*3, "check that message triggers again"
+
+    with prod:
+        fail_pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    assert fail_id.state == 'ready'
+    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    assert fail_pr.comments[2:] == [
         awaiting,
         awaiting,
-    ], "each cron run should trigger a new message"
+        awaiting,
+        (users['reviewer'], "hansen r+"),
+    ],"if a PR is ready (unblocked), the reminder should not trigger as "\
+        "we're likely waiting for the mergebot"
 
 def test_partially_empty(env, config, make_repo):
     """ Check what happens when only some commits of the PR are now empty
@@ -616,6 +629,14 @@ def test_disapproval(env, config, make_repo, users):
                         "sibling forward ports may have to be unapproved "
                         "individually."),
     ]
+    with prod:
+        pr2.post_comment('hansen r-', token=config['role_other']['token'])
+    env.run_crons(None)
+    assert pr2_id.state == 'validated'
+    assert pr2.comments[2:] == [
+        (users['other'], "hansen r+"),
+        (users['other'], "hansen r-"),
+    ], "shouldn't have a warning on r- because it's the only approved PR of the chain"
 
 def test_delegate_fw(env, config, make_repo, users):
     """If a user is delegated *on a forward port* they should be able to approve
@@ -692,6 +713,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 '''.format_map(users)),
         (users['other'], 'hansen r+')
     ]
+    assert pr2_id.reviewed_by
 
 
 def test_redundant_approval(env, config, make_repo, users):

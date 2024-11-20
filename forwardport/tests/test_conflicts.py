@@ -262,7 +262,7 @@ def test_massive_conflict(env, config, make_repo):
 
 
 def test_conflict_deleted(env, config, make_repo):
-    prod, other = make_basic(env, config, make_repo)
+    prod, other = make_basic(env, config, make_repo, statuses="default")
     # remove f from b
     with prod:
         prod.make_commits(
@@ -277,18 +277,12 @@ def test_conflict_deleted(env, config, make_repo):
             ref='heads/conflicting'
         )
         pr = prod.make_pr(target='a', head='conflicting')
-        prod.post_status(p_0, 'success', 'legal/cla')
-        prod.post_status(p_0, 'success', 'ci/runbot')
+        prod.post_status(p_0, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
-
-    env.run_crons()
-    # wait a bit for PR webhook... ?
-    time.sleep(5)
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     # should have created a new PR
@@ -300,9 +294,14 @@ def test_conflict_deleted(env, config, make_repo):
         'g': 'c',
     }
     assert pr1.state == 'opened'
-    # NOTE: no actual conflict markers because pr1 essentially adds f de-novo
     assert prod.read_tree(prod.commit(pr1.head)) == {
-        'f': 'xxx',
+        'f': matches("""\
+<<<\x3c<<< $$
+||||||| $$
+=======
+xxx
+>>>\x3e>>> $$
+"""),
         'g': 'c',
     }
 
@@ -332,6 +331,89 @@ def test_conflict_deleted(env, config, make_repo):
         'g': 'c',
     }
     assert pr1.state == 'opened', "state should be open still"
+
+
+def test_conflict_deleted_deep(env, config, make_repo):
+    """ Same as the previous one but files are deeper than toplevel, and we only
+    want to see if the conflict post-processing works.
+    """
+    # region: setup
+    prod = make_repo("test")
+    env['runbot_merge.events_sources'].create({'repository': prod.name})
+    with prod:
+        [a, b] = prod.make_commits(
+            None,
+            Commit("a", tree={
+                "foo/bar/baz": "1",
+                "foo/bar/qux": "1",
+                "corge/grault": "1",
+            }),
+            Commit("b", tree={"foo/bar/qux": "2"}, reset=True),
+        )
+        prod.make_ref("heads/a", a)
+        prod.make_ref("heads/b", b)
+
+    project = env['runbot_merge.project'].create({
+        'name': "test",
+        'github_token': config['github']['token'],
+        'github_prefix': 'hansen',
+        'fp_github_token': config['github']['token'],
+        'fp_github_name': 'herbert',
+        'branch_ids': [
+            (0, 0, {'name': 'a', 'sequence': 100}),
+            (0, 0, {'name': 'b', 'sequence': 80}),
+        ],
+        "repo_ids": [
+            (0, 0, {
+                'name': prod.name,
+                'required_statuses': "default",
+                'fp_remote_target': prod.fork().name,
+                'group_id': False,
+            })
+        ]
+    })
+    env['res.partner'].search([
+        ('github_login', '=', config['role_reviewer']['user'])
+    ]).write({
+        'review_rights': [(0, 0, {'repository_id': project.repo_ids.id, 'review': True})]
+    })
+    # endregion
+
+    with prod:
+        prod.make_commits(
+            'a',
+            Commit("c", tree={
+                "foo/bar/baz": "2",
+                "corge/grault": "insert funny number",
+            }),
+            ref="heads/conflicting",
+        )
+        pr = prod.make_pr(target='a', head='conflicting')
+        prod.post_status("conflicting", "success")
+        pr.post_comment("hansen r+", config['role_reviewer']['token'])
+    env.run_crons()
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+    _, pr1 = env['runbot_merge.pull_requests'].search([], order='number')
+    assert prod.read_tree(prod.commit(pr1.head), recursive=True) == {
+        "foo/bar/qux": "2",
+        "foo/bar/baz": """\
+<<<<<<< HEAD
+||||||| MERGE BASE
+=======
+2
+>>>>>>> FORWARD PORTED
+""",
+        "corge/grault": """\
+<<<<<<< HEAD
+||||||| MERGE BASE
+=======
+insert funny number
+>>>>>>> FORWARD PORTED
+"""
+    }, "the conflicting file should have had conflict markers fixed in"
 
 def test_multiple_commits_same_authorship(env, config, make_repo):
     """ When a PR has multiple commits by the same author and its
@@ -436,13 +518,13 @@ def test_multiple_commits_different_authorship(env, config, make_repo, users, ro
         "author set to the bot but an empty email"
     assert get(c.committer) == (bot, '')
 
-    assert re.match(r'''<<<\x3c<<< HEAD
+    assert prod.read_tree(c)['g'] == matches('''<<<\x3c<<< b
 b
-|||||||| parent of [\da-f]{7,}.*
+||||||| $$
 =======
 2
->>>\x3e>>> [\da-f]{7,}.*
-''', prod.read_tree(c)['g'])
+>>>\x3e>>> $$
+''')
 
     # I'd like to fix the conflict so everything is clean and proper *but*
     # github's API apparently rejects creating commits with an empty email.
@@ -459,7 +541,7 @@ b
 
     assert pr2.comments == [
         seen(env, pr2, users),
-        (users['user'], matches('@%s @%s $$CONFLICT' % (users['user'], users['reviewer']))),
+        (users['user'], matches('@%(user)s @%(reviewer)s $$CONFLICT' % users)),
         (users['reviewer'], 'hansen r+'),
         (users['user'], f"@{users['user']} @{users['reviewer']} unable to stage: "
                         "All commits must have author and committer email, "
