@@ -11,7 +11,8 @@ import requests
 from lxml import html
 
 import odoo
-from utils import _simple_init, seen, matches, get_partner, Commit, pr_page, to_pr, part_of, ensure_one
+from utils import _simple_init, seen, matches, get_partner, Commit, pr_page, to_pr, part_of, ensure_one, read_tracking_value
+
 
 @pytest.fixture(autouse=True)
 def _configure_statuses(request, project, repo):
@@ -172,28 +173,29 @@ def test_trivial_flow(env, repo, page, users, config):
 
     # reverse because the messages are in newest-to-oldest by default
     # (as that's how you want to read them)
-    messages = reversed([
-        (m.author_id.display_name, m.body, [get_tracking_values(v) for v in m.tracking_value_ids])
-        for m in pr_id.message_ids
-    ])
+    messages = pr_id.message_ids[::-1].mapped(lambda m: (
+        m.author_id.display_name,
+        m.body,
+        list(map(read_tracking_value, m.tracking_value_ids)),
+    ))
 
     assert list(messages) == [
         (users['user'], '<p>Pull Request created</p>', []),
-        (users['user'], '', [(c1, c2)]),
-        ('OdooBot', f'<p>statuses changed on {c2}</p>', [('Opened', 'Validated')]),
+        (users['user'], '', [('head', c1, c2)]),
+        ('OdooBot', f'<p>statuses changed on {c2}</p>', [('state', 'Opened', 'Validated')]),
         # reviewer approved changing the state and setting reviewer as reviewer
         # plus set merge method
         ('Reviewer', '', [
-            ('', 'rebase and merge, using the PR as merge commit message'),
-            ('', 'Reviewer'),
-            ('Validated', 'Ready'),
+            ('merge_method', '', 'rebase and merge, using the PR as merge commit message'),
+            ('reviewed_by', '', 'Reviewer'),
+            ('state', 'Validated', 'Ready'),
         ]),
         # staging succeeded
         (matches('$$'), f'<p>staging {st.id} succeeded</p>', [
             # set merge date
-            (False, pr_id.merge_date),
+            ('merge_date', False, pr_id.merge_date),
             # updated state
-            ('Ready', 'Merged'),
+            ('state', 'Ready', 'Merged'),
         ]),
     ]
 
@@ -617,7 +619,6 @@ def test_staging_ci_timeout(env, repo, config, page, update_op: Callable[[int], 
     assert dangerbox
     assert dangerbox[0].text == 'timed out (>60 minutes)'
 
-@pytest.mark.defaultstatuses
 def test_timeout_bump_on_pending(env, repo, config):
     with repo:
         [m, c] = repo.make_commits(
@@ -627,8 +628,9 @@ def test_timeout_bump_on_pending(env, repo, config):
         )
         repo.make_ref('heads/master', m)
 
-        prx = repo.make_pr(title='title', body='body', target='master', head=c)
-        repo.post_status(prx.head, 'success')
+        prx = repo.make_pr(target='master', head=c)
+        repo.post_status(prx.head, 'success', 'ci/runbot')
+        repo.post_status(prx.head, 'success', 'legal/cla')
         prx.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -636,9 +638,18 @@ def test_timeout_bump_on_pending(env, repo, config):
     old_timeout = odoo.fields.Datetime.to_string(datetime.datetime.now() - datetime.timedelta(days=15))
     st.timeout_limit = old_timeout
     with repo:
-        repo.post_status('staging.master', 'pending')
+        repo.post_status('staging.master', 'pending', 'ci/runbot')
     env.run_crons(None)
-    assert st.timeout_limit > old_timeout
+    assert st.timeout_limit > old_timeout, "receiving a pending status should bump the timeout"
+
+    st.timeout_limit = old_timeout
+    # clear the statuses cache to remove the memoized status times
+    st.statuses_cache = "{}"
+    st.commit_ids.statuses = "{}"
+    with repo:
+        repo.post_status('staging.master', 'success', 'legal/cla')
+    env.run_crons(None)
+    assert st.timeout_limit == old_timeout, "receiving a success status should *not* bump the timeout"
 
 def test_staging_ci_failure_single(env, repo, users, config, page):
     """ on failure of single-PR staging, mark & notify failure
@@ -2203,83 +2214,53 @@ Co-authored-by: {other_user['name']} <{other_user['email']}>\
         }
 
 
-class TestPRUpdate(object):
+class TestPRUpdate:
     """ Pushing on a PR should update the HEAD except for merged PRs, it
     can have additional effect (see individual tests)
     """
+    @pytest.fixture(autouse=True)
+    def master(self, repo):
+        with repo:
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref="heads/master")
+        return m
+
     def test_update_opened(self, env, repo):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
+            [c] = repo.make_commits("master", Commit('first', tree={'m': 'c1'}))
+            prx = repo.make_pr(target='master', head=c)
 
         pr = to_pr(env, prx)
         assert pr.head == c
         # alter & push force PR entirely
         with repo:
-            c2 = repo.make_commit(m, 'first', None, tree={'m': 'cc'})
+            [c2] = repo.make_commits("master", Commit('first', tree={'m': 'cc'}))
             repo.update_ref(prx.ref, c2, force=True)
         assert pr.head == c2
 
-    def test_reopen_update(self, env, repo, config):
-        with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
-            prx.post_comment("hansen r+", config['role_reviewer']['token'])
-
-        pr = to_pr(env, prx)
-        assert pr.state == 'approved'
-        assert pr.reviewed_by
-        with repo:
-            prx.close()
-        assert pr.state == 'closed'
-        assert pr.head == c
-        assert not pr.reviewed_by
-
-        with repo:
-            prx.open()
-        assert pr.state == 'opened'
-        assert not pr.reviewed_by
-
-        with repo:
-            c2 = repo.make_commit(c, 'first', None, tree={'m': 'cc'})
-            repo.update_ref(prx.ref, c2, force=True)
-        assert pr.head == c2
-
+    @pytest.mark.defaultstatuses
     def test_update_validated(self, env, repo):
         """ Should reset to opened
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            [c] = repo.make_commits("master", Commit('first', tree={'m': 'c1'}))
+            pr = repo.make_pr(target='master', head=c)
+            repo.post_status(c, 'success')
         env.run_crons()
-        pr = to_pr(env, prx)
-        assert pr.head == c
-        assert pr.state == 'validated'
+
+        pr_id = to_pr(env, pr)
+        assert pr_id.head == c
+        assert pr_id.state == 'validated'
 
         with repo:
-            c2 = repo.make_commit(m, 'first', None, tree={'m': 'cc'})
-            repo.update_ref(prx.ref, c2, force=True)
-        assert pr.head == c2
-        assert pr.state == 'opened'
+            [c2] = repo.make_commits("master", Commit('first', tree={'m': 'cc'}))
+            repo.update_ref(pr.ref, c2, force=True)
+        assert pr_id.head == c2
+        assert pr_id.state == 'opened'
 
     def test_update_approved(self, env, repo, config):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
+            [c] = repo.make_commits("master", Commit('fist', tree={'m': 'c1'}))
+            prx = repo.make_pr(target='master', head=c)
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
 
         pr = to_pr(env, prx)
@@ -2287,22 +2268,19 @@ class TestPRUpdate(object):
         assert pr.state == 'approved'
 
         with repo:
-            c2 = repo.make_commit(c, 'first', None, tree={'m': 'cc'})
+            [c2] = repo.make_commits("master", Commit('first', tree={'m': 'cc'}))
             repo.update_ref(prx.ref, c2, force=True)
         assert pr.head == c2
         assert pr.state == 'opened'
 
+    @pytest.mark.defaultstatuses
     def test_update_ready(self, env, repo, config):
         """ Should reset to opened
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            [c] = repo.make_commits("master", Commit('fist', tree={'m': 'c1'}))
+            prx = repo.make_pr(target='master', head=c)
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
         pr = to_pr(env, prx)
@@ -2310,22 +2288,19 @@ class TestPRUpdate(object):
         assert pr.state == 'ready'
 
         with repo:
-            c2 = repo.make_commit(c, 'first', None, tree={'m': 'cc'})
+            [c2] = repo.make_commits(c, Commit('first', tree={'m': 'cc'}))
             repo.update_ref(prx.ref, c2, force=True)
         assert pr.head == c2
         assert pr.state == 'opened'
 
+    @pytest.mark.defaultstatuses
     def test_update_staged(self, env, repo, config):
         """ Should cancel the staging & reset PR to opened
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            [c] = repo.make_commits("master", Commit('fist', tree={'m': 'c1'}))
+            prx = repo.make_pr(target='master', head=c)
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
 
         env.run_crons()
@@ -2334,33 +2309,27 @@ class TestPRUpdate(object):
         assert pr.staging_id
 
         with repo:
-            c2 = repo.make_commit(c, 'first', None, tree={'m': 'cc'})
+            [c2] = repo.make_commits(c, Commit('first', tree={'m': 'cc'}))
             repo.update_ref(prx.ref, c2, force=True)
         assert pr.head == c2
         assert pr.state == 'opened'
         assert not pr.staging_id
         assert not env['runbot_merge.stagings'].search([])
 
+    @pytest.mark.defaultstatuses
     def test_split(self, env, repo, config):
         """ Should remove the PR from its split, and possibly delete the split
         entirely.
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'first', None, tree={'m': 'm', '1': '1'})
-            repo.make_ref('heads/p1', c)
-            prx1 = repo.make_pr(title='t1', body='b1', target='master', head='p1')
-            repo.post_status(prx1.head, 'success', 'legal/cla')
-            repo.post_status(prx1.head, 'success', 'ci/runbot')
+            repo.make_commits("master", Commit('first', tree={'1': '1'}), ref="heads/p1")
+            prx1 = repo.make_pr(target='master', head='p1')
+            repo.post_status(prx1.head, 'success')
             prx1.post_comment('hansen r+', config['role_reviewer']['token'])
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'm', '2': '2'})
-            repo.make_ref('heads/p2', c)
-            prx2 = repo.make_pr(title='t2', body='b2', target='master', head='p2')
-            repo.post_status(prx2.head, 'success', 'legal/cla')
-            repo.post_status(prx2.head, 'success', 'ci/runbot')
+            [c] = repo.make_commits("master", Commit('first', tree={'2': '2'}), ref="heads/p2")
+            prx2 = repo.make_pr(target='master', head='p2')
+            repo.post_status(prx2.head, 'success')
             prx2.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
@@ -2371,7 +2340,7 @@ class TestPRUpdate(object):
         s0 = pr1.staging_id
 
         with repo:
-            repo.post_status('heads/staging.master', 'failure', 'ci/runbot')
+            repo.post_status('heads/staging.master', 'failure')
         env.run_crons()
 
         assert pr1.staging_id and pr1.staging_id != s0, "pr1 should have been re-staged"
@@ -2381,22 +2350,20 @@ class TestPRUpdate(object):
         assert env['runbot_merge.split'].search([])
 
         with repo:
-            repo.update_ref(prx2.ref, repo.make_commit(c, 'second', None, tree={'m': 'm', '2': '22'}), force=True)
+            [c2] = repo.make_commits(c, Commit('second', tree={'2': '22'}))
+            repo.update_ref(prx2.ref, c2, force=True)
         # probably not necessary ATM but...
         env.run_crons()
 
         assert pr2.state == 'opened', "state should have been reset"
         assert not env['runbot_merge.split'].search([]), "there should be no split left"
 
+    @pytest.mark.defaultstatuses
     def test_update_error(self, env, repo, config):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            [c] = repo.make_commits("master", Commit('fist', tree={'m': 'c1'}))
+            prx = repo.make_pr(target='master', head=c)
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
         pr = to_pr(env, prx)
@@ -2404,24 +2371,25 @@ class TestPRUpdate(object):
         assert pr.staging_id
 
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'failure', 'ci/runbot')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
         assert not pr.staging_id
         assert pr.state == 'error'
 
         with repo:
-            c2 = repo.make_commit(c, 'first', None, tree={'m': 'cc'})
+            [c2] = repo.make_commits(c, Commit('first', tree={'m': 'cc'}))
             repo.update_ref(prx.ref, c2, force=True)
         assert pr.head == c2
         assert pr.state == 'opened'
 
     def test_unknown_pr(self, env, repo):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
+            [m, c] = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('first', tree={'m': 'c1'}),
+            )
             repo.make_ref('heads/1.0', m)
-
-            c = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='1.0', head=c)
         assert not env['runbot_merge.pull_requests'].search([('number', '=', prx.number)])
 
@@ -2430,27 +2398,24 @@ class TestPRUpdate(object):
         })
 
         with repo:
-            c2 = repo.make_commit(c, 'second', None, tree={'m': 'c2'})
+            [c2] = repo.make_commits(c, Commit('second', tree={'m': 'c2'}))
             repo.update_ref(prx.ref, c2, force=True)
 
         assert not env['runbot_merge.pull_requests'].search([('number', '=', prx.number)])
 
+    @pytest.mark.defaultstatuses
     def test_update_to_ci(self, env, repo):
         """ If a PR is updated to a known-valid commit, it should be
         validated
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
-
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            c2 = repo.make_commit(m, 'first', None, tree={'m': 'cc'})
-            repo.post_status(c2, 'success', 'legal/cla')
-            repo.post_status(c2, 'success', 'ci/runbot')
+            [c] = repo.make_commits("master", Commit('fist', tree={'m': 'c1'}))
+            [c2] = repo.make_commits("master", Commit('first', tree={'m': 'cc'}))
+            repo.post_status(c2, 'success')
         env.run_crons()
 
         with repo:
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
+            prx = repo.make_pr(target='master', head=c)
         pr = to_pr(env, prx)
         assert pr.head == c
         assert pr.state == 'opened'
@@ -2460,6 +2425,7 @@ class TestPRUpdate(object):
         assert pr.head == c2
         assert pr.state == 'validated'
 
+    @pytest.mark.defaultstatuses
     def test_update_missed(self, env, repo, config, users):
         """ Sometimes github's webhooks don't trigger properly, a branch's HEAD
         does not get updated and we might e.g. attempt to merge a PR despite it
@@ -2479,10 +2445,9 @@ class TestPRUpdate(object):
             repo.make_ref('heads/somethingelse', c)
 
             [c] = repo.make_commits(
-                'heads/master', repo.Commit('title \n\nbody', tree={'a': '1'}), ref='heads/abranch')
+                'master', repo.Commit('title \n\nbody', tree={'a': '1'}), ref='heads/abranch')
             pr = repo.make_pr(target='master', head='abranch')
-            repo.post_status(pr.head, 'success', 'legal/cla')
-            repo.post_status(pr.head, 'success', 'ci/runbot')
+            repo.post_status(pr.head, 'success')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
         env.run_crons()
@@ -2498,8 +2463,7 @@ class TestPRUpdate(object):
             # to the PR *actually* having more than 1 commit and thus needing
             # a configuration
             [c2] = repo.make_commits('heads/master', repo.Commit('c2', tree={'a': '2'}))
-            repo.post_status(c2, 'success', 'legal/cla')
-            repo.post_status(c2, 'success', 'ci/runbot')
+            repo.post_status(c2, 'success')
             repo.update_ref(pr.ref, c2, force=True)
 
         other = env['runbot_merge.branch'].create({
@@ -2608,61 +2572,114 @@ Please check and re-approve.
             f"Updated target, squash, message. Updated {pr_id.display_name} to ready. Updated to {c2}."
         )
 
-    def test_update_closed(self, env, repo):
+    @pytest.mark.defaultstatuses
+    def test_update_closed(self, env, repo, config):
         with repo:
-            [m] = repo.make_commits(None, repo.Commit('initial', tree={'m': 'm'}), ref='heads/master')
-
-            [c] = repo.make_commits(m, repo.Commit('first', tree={'m': 'm3'}), ref='heads/abranch')
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
+            [c] = repo.make_commits("master", repo.Commit('first', tree={'m': 'm3'}), ref='heads/abranch')
+            pr = repo.make_pr(target='master', head=c)
+            pr.post_comment("hansen r+", config['role_reviewer']['token'])
         env.run_crons()
-        pr = to_pr(env, prx)
-        assert pr.state == 'opened'
-        assert pr.head == c
-        assert pr.squash
+
+        pr_id = to_pr(env, pr)
+        assert pr_id.state == 'approved'
+        assert pr_id.head == c
+        assert pr_id.squash
+        assert pr_id.reviewed_by
 
         with repo:
-            prx.close()
-
-        with repo:
-            c2 = repo.make_commit(c, 'xxx', None, tree={'m': 'm4'})
-            repo.update_ref(prx.ref, c2)
-
+            pr.close()
         assert pr.state == 'closed'
         assert pr.head == c
-        assert pr.squash
+        assert not pr_id.reviewed_by
+        assert pr_id.squash
 
         with repo:
-            prx.open()
-        assert pr.state == 'opened'
-        assert pr.head == c2
-        assert not pr.squash
+            [c2] = repo.make_commits(c, Commit('xxx', tree={'m': 'm4'}))
+            repo.update_ref(pr.ref, c2)
+            repo.post_status(c2, "success")
 
-    def test_update_closed_revalidate(self, env, repo):
-        """ The PR should be validated on opening and reopening in case there's
-        already a CI+ stored (as the CI might never trigger unless explicitly
-        re-requested)
+        assert pr_id.state == 'closed'
+        assert pr_id.head == c
+        assert not pr_id.reviewed_by
+        assert pr_id.squash
+
+        with repo:
+            pr.open()
+        assert pr_id.state == 'validated'
+        assert pr_id.head == c2
+        assert not pr_id.reviewed_by
+        assert not pr_id.squash
+
+    @pytest.mark.defaultstatuses
+    def test_update_incorrect_commits_count(self, port, env, project, repo, config, users):
+        """This is not a great test but it aims to kinda sorta simulate the
+        behaviour when a user retargets and updates a PR at about the same time:
+        github can send the hooks in the wrong order, which leads to the correct
+        base and head but can lead to the wrong squash status.
         """
+        project.write({
+            'branch_ids': [(0, 0, {
+                'name': 'xxx',
+            })]
+        })
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [c] = repo.make_commits("master", Commit("c", tree={"m": "n"}), ref="heads/thing")
+            pr = repo.make_pr(target='master', head='thing')
 
-            c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
-            repo.post_status(c, 'success', 'legal/cla')
-            repo.post_status(c, 'success', 'ci/runbot')
-            prx = repo.make_pr(title='title', body='body', target='master', head=c)
+        pr_id = to_pr(env, pr)
+        pr_id.head = '0'*40
+        with requests.Session() as s:
+            r = s.post(
+                f"http://localhost:{port}/runbot_merge/hooks",
+                headers={
+                    "X-Github-Event": "pull_request",
+                },
+                json={
+                    'action': 'synchronize',
+                    'sender': {
+                        'login': users['user'],
+                    },
+                    'repository': {
+                        'full_name': repo.name,
+                    },
+                    'pull_request': {
+                        'number': pr.number,
+                        'head': {'sha': c},
+                        'title': "c",
+                        'commits': 40123,
+                        'base': {
+                            'ref': 'xxx',
+                            'repo': {
+                                'full_name': repo.name,
+                            },
+                        }
+                    }
+                }
+            )
+            r.raise_for_status()
+        assert pr_id.head == c, "the head should have been updated"
+        assert not pr_id.squash, "the wrong count should be used"
 
+        with repo:
+            pr.post_comment("hansen r+", config['role_reviewer']['token'])
+            repo.post_status(c, 'success')
         env.run_crons()
-        pr = to_pr(env, prx)
-        assert pr.state == 'validated', \
-            "if a PR is created on a CI'd commit, it should be validated immediately"
-
-        with repo: prx.close()
-        assert pr.state == 'closed'
-
-        with repo: prx.open()
-        assert pr.state == 'validated', \
-            "if a PR is reopened and had a CI'd head, it should be validated immediately"
-
+        assert not pr_id.blocked
+        assert pr_id.message_ids[::-1].mapped(lambda m: (
+            ((m.subject or '') + '\n\n' + m.body).strip(),
+            list(map(read_tracking_value, m.tracking_value_ids)),
+        )) == [
+            ('<p>Pull Request created</p>', []),
+            ('', [('head', c, '0'*40)]),
+            ('', [('head', '0'*40, c), ('squash', 1, 0)]),
+            ('', [('reviewed_by', '', 'Reviewer'), ('state', 'Opened', 'Approved')]),
+            (f'<p>statuses changed on {c}</p>', [('state', 'Approved', 'Ready')]),
+        ]
+        assert pr_id.staging_id
+        with repo:
+            repo.post_status('staging.master', 'success')
+        env.run_crons()
+        assert pr_id.merge_date
 
 class TestBatching(object):
     def _pr(self, repo, prefix, trees, *, target='master', user, reviewer,
@@ -2982,7 +2999,6 @@ class TestBatching(object):
             pr0.post_comment('hansen NOW!', config['role_reviewer']['token'])
         env.run_crons()
 
-        # TODO: maybe just deactivate stagings instead of deleting them when canceling?
         assert not p_1.staging_id
         assert to_pr(env, pr0).staging_id
 
@@ -3405,15 +3421,15 @@ class TestUnknownPR:
 
         c = env['runbot_merge.commit'].search([('sha', '=', prx.head)])
         assert json.loads(c.statuses) == {
-            'legal/cla': {'state': 'success', 'target_url': None, 'description': None},
-            'ci/runbot': {'state': 'success', 'target_url': 'http://example.org/wheee', 'description': None}
+            'legal/cla': {'state': 'success', 'target_url': None, 'description': None, 'updated_at': matches("$$")},
+            'ci/runbot': {'state': 'success', 'target_url': 'http://example.org/wheee', 'description': None, 'updated_at': matches("$$")}
         }
         assert prx.comments == [
             seen(env, prx, users),
             (users['reviewer'], 'hansen r+'),
             (users['reviewer'], 'hansen r+'),
             seen(env, prx, users),
-            (users['user'], f"@{users['user']} I didn't know about this PR and had to "
+            (users['user'], f"@{users['reviewer']} I didn't know about this PR and had to "
                             "retrieve its information, you may have to "
                             "re-approve it as I didn't see previous commands."),
         ]
@@ -3469,7 +3485,7 @@ class TestUnknownPR:
             # reviewer is set because fetch replays all the comments (thus
             # setting r+ and reviewer) but then syncs the head commit thus
             # unsetting r+ but leaving the reviewer
-            (users['user'], f"@{users['user']} I didn't know about this PR and had to retrieve "
+            (users['user'], f"@{users['reviewer']} I didn't know about this PR and had to retrieve "
                             "its information, you may have to re-approve it "
                             "as I didn't see previous commands."),
         ]

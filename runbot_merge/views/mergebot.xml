@@ -115,6 +115,7 @@
                 <field name="state"/>
                 <field name="author"/>
                 <field name="reviewed_by"/>
+                <field name="write_date"/>
             </tree>
         </field>
     </record>
@@ -378,6 +379,15 @@
         <field name="name">Commit Statuses</field>
         <field name="res_model">runbot_merge.commit</field>
         <field name="view_mode">tree,form</field>
+    </record>
+    <record id="runbot_merge_commits_search" model="ir.ui.view">
+        <field name="name">commits search</field>
+        <field name="model">runbot_merge.commit</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="sha" operator="="/>
+            </search>
+        </field>
     </record>
     <record id="runbot_merge_commits_tree" model="ir.ui.view">
         <field name="name">commits list</field>

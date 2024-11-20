@@ -1,3 +1,4 @@
+import lxml.html
 import pytest
 
 from utils import seen, Commit, make_basic, to_pr
@@ -74,6 +75,92 @@ def test_ignore(env, config, make_repo, users):
         (users['user'], "'ignore' is deprecated, use 'fw=no' to disable forward porting."),
         (users['user'], "Forward-port disabled (via limit)."),
         (users['user'], "Disabled forward-porting."),
+    ]
+
+    with prod:
+        pr.post_comment('hansen up to c', config['role_reviewer']['token'])
+    env.run_crons()
+
+    assert env['runbot_merge.pull_requests'].search([]) == pr_id,\
+        "should still not have created a forward port"
+    assert pr.comments[6:] == [
+        (users['reviewer'], 'hansen up to c'),
+        (users['user'], "@%s can not forward-port, policy is 'no' on %s" % (
+            users['reviewer'],
+            pr_id.display_name,
+        ))
+    ]
+
+    assert pr_id.limit_id == env['runbot_merge.branch'].search([('name', '=', 'c')])
+    pr_id.limit_id = False
+
+    with prod:
+        pr.post_comment("hansen fw=default", config['role_reviewer']['token'])
+    env.run_crons()
+
+    assert pr.comments[8:] == [
+        (users['reviewer'], "hansen fw=default"),
+        (users['user'], "Starting forward-port. Waiting for CI to create followup forward-ports.")
+    ]
+
+    assert env['runbot_merge.pull_requests'].search([('source_id', '=', pr_id.id)]),\
+        "should finally have created a forward port"
+
+
+def test_unignore(env, config, make_repo, users, page):
+    env['res.partner'].create({'name': users['other'], 'github_login': users['other'], 'email': 'other@example.org'})
+
+    prod, _ = make_basic(env, config, make_repo, statuses="default")
+    token = config['role_other']['token']
+    fork = prod.fork(token=token)
+    with prod, fork:
+        [c] = fork.make_commits('a', Commit('c', tree={'0': '0'}), ref='heads/mybranch')
+        pr = prod.make_pr(target='a', head=f'{fork.owner}:mybranch', title="title", token=token)
+        prod.post_status(c, 'success')
+    env.run_crons()
+
+    pr_id = to_pr(env, pr)
+    assert pr_id.batch_id.fw_policy == 'default'
+
+    doc = lxml.html.fromstring(page(f'/{prod.name}/pull/{pr.number}'))
+    assert len(doc.cssselect("table > tbody > tr")) == 3, \
+        "the overview table should have as many rows as there are tables"
+
+    with prod:
+        pr.post_comment('hansen fw=no', token)
+    env.run_crons(None)
+    assert pr_id.batch_id.fw_policy == 'no'
+
+    doc = lxml.html.fromstring(page(f'/{prod.name}/pull/{pr.number}'))
+    assert len(doc.cssselect("table > tbody > tr")) == 1, \
+        "if fw=no, there should be just one row"
+
+    with prod:
+        pr.post_comment('hansen fw=default', token)
+    env.run_crons(None)
+    assert pr_id.batch_id.fw_policy == 'default'
+
+    with prod:
+        pr.post_comment('hansen fw=no', token)
+    env.run_crons(None)
+    with prod:
+        pr.post_comment('hansen up to c', token)
+    env.run_crons(None)
+    assert pr_id.batch_id.fw_policy == 'default'
+
+    assert pr.comments == [
+        seen(env, pr, users),
+        (users['other'], "hansen fw=no"),
+        (users['user'], "Disabled forward-porting."),
+        (users['other'], "hansen fw=default"),
+        (users['user'], "Waiting for CI to create followup forward-ports."),
+        (users['other'], "hansen fw=no"),
+        (users['user'], "Disabled forward-porting."),
+        (users['other'], "hansen up to c"),
+        (users['user'], "Forward-porting to 'c'. Re-enabled forward-porting "\
+                        "(you should use `fw=default` to re-enable forward "\
+                        "porting after disabling)."
+        ),
     ]
 
 def test_disable(env, config, make_repo, users):

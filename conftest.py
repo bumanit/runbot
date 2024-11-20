@@ -79,6 +79,18 @@ import requests
 NGROK_CLI = [
     'ngrok', 'start', '--none', '--region', 'eu',
 ]
+# When an operation can trigger webhooks, the test suite has to wait *some time*
+# in the hope that the webhook(s) will have been dispatched by the end as github
+# provides no real webhook feedback (e.g. an event stream).
+#
+# This also acts as a bit of a rate limiter, as github has gotten more and more
+# angry with that. Especially around event-generating limits.
+#
+# TODO: explore https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+#       and see if it would be possible to be a better citizen (e.g. add test
+#       retry / backoff using GH tighter GH integration)
+WEBHOOK_WAIT_TIME = 10  # seconds
+LOCAL_WEBHOOK_WAIT_TIME = 1
 
 def pytest_addoption(parser):
     parser.addoption('--addons-path')
@@ -99,7 +111,12 @@ def pytest_addoption(parser):
 def is_manager(config):
     return not hasattr(config, 'workerinput')
 
-def pytest_configure(config):
+def pytest_configure(config: pytest.Config) -> None:
+    global WEBHOOK_WAIT_TIME
+    # no tunnel => local setup, no need to wait as much
+    if not config.getoption('--tunnel'):
+        WEBHOOK_WAIT_TIME = LOCAL_WEBHOOK_WAIT_TIME
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mergebot_test_utils'))
     config.addinivalue_line(
         "markers",
@@ -126,7 +143,7 @@ def _set_socket_timeout():
     socket.setdefaulttimeout(120.0)
 
 @pytest.fixture(scope="session")
-def config(pytestconfig):
+def config(pytestconfig: pytest.Config) -> dict[str, dict[str, str]]:
     """ Flat version of the pytest config file (pytest.ini), parses to a
     simple dict of {section: {key: value}}
 
@@ -211,7 +228,7 @@ def users(partners, rolemap):
     return {k: v['login'] for k, v in rolemap.items()}
 
 @pytest.fixture(scope='session')
-def tunnel(pytestconfig, port):
+def tunnel(pytestconfig: pytest.Config, port: int):
     """ Creates a tunnel to localhost:<port> using ngrok or localtunnel, should yield the
     publicly routable address & terminate the process at the end of the session
     """
@@ -314,7 +331,11 @@ class DbDict(dict):
                 return db
 
             d = (self._shared_dir / f'shared-{module}')
-            d.mkdir()
+            try:
+                d.mkdir()
+            except FileExistsError:
+                pytest.skip(f"found shared dir for {module}, database creation has likely failed")
+
             self[module] = db = 'template_%s' % uuid.uuid4()
             subprocess.run([
                 'odoo', '--no-http',
@@ -368,8 +389,8 @@ def db(request, module, dbcache, tmpdir):
     if not request.config.getoption('--no-delete'):
         subprocess.run(['dropdb', rundb], check=True)
 
-def wait_for_hook(n=1):
-    time.sleep(10 * n)
+def wait_for_hook():
+    time.sleep(WEBHOOK_WAIT_TIME)
 
 def wait_for_server(db, port, proc, mod, timeout=120):
     """ Polls for server to be response & have installed our module.
@@ -437,6 +458,7 @@ class Base(models.AbstractModel):
     _inherit = 'base'
 
     def run_crons(self):
+        builtins.current_date = self.env.context.get('current_date')
         builtins.forwardport_merged_before = self.env.context.get('forwardport_merged_before')
         builtins.forwardport_updated_before = self.env.context.get('forwardport_updated_before')
         self.env['ir.cron']._process_jobs(self.env.cr.dbname)
@@ -477,6 +499,7 @@ class IrCron(models.Model):
         (mod / '__manifest__.py').write_text(pprint.pformat({
             'name': 'dummy saas_worker',
             'version': '1.0',
+            'license': 'BSD-0-Clause',
         }), encoding='utf-8')
         (mod / 'util.py').write_text("""\
 def from_role(*_, **__):
@@ -777,19 +800,20 @@ class Repo:
             parents=[p['sha'] for p in gh_commit['parents']],
         )
 
-    def read_tree(self, commit):
+    def read_tree(self, commit: Commit, *, recursive=False) -> dict[str, str]:
         """ read tree object from commit
-
-        :param Commit commit:
-        :rtype: Dict[str, str]
         """
-        r = self._session.get('https://api.github.com/repos/{}/git/trees/{}'.format(self.name, commit.tree))
+        r = self._session.get(
+            'https://api.github.com/repos/{}/git/trees/{}'.format(self.name, commit.tree),
+            params={'recursive': '1'} if recursive else None,
+        )
         assert 200 <= r.status_code < 300, r.text
 
         # read tree's blobs
         tree = {}
         for t in r.json()['tree']:
-            assert t['type'] == 'blob', "we're *not* doing recursive trees in test cases"
+            if t['type'] != 'blob':
+                continue # only keep blobs
             r = self._session.get('https://api.github.com/repos/{}/git/blobs/{}'.format(self.name, t['sha']))
             assert 200 <= r.status_code < 300, r.text
             tree[t['path']] = base64.b64decode(r.json()['content']).decode()
@@ -811,6 +835,11 @@ class Repo:
     def update_ref(self, name, commit, force=False):
         assert self.hook
         r = self._session.patch('https://api.github.com/repos/{}/git/refs/{}'.format(self.name, name), json={'sha': commit, 'force': force})
+        assert r.ok, r.text
+
+    def delete_ref(self, name):
+        assert self.hook
+        r = self._session.delete(f'https://api.github.com/repos/{self.name}/git/refs/{name}')
         assert r.ok, r.text
 
     def protect(self, branch):
@@ -996,11 +1025,11 @@ class Repo:
                 return
 
     def __enter__(self):
-        self.hook = 1
+        self.hook = True
         return self
     def __exit__(self, *args):
-        wait_for_hook(self.hook)
-        self.hook = 0
+        wait_for_hook()
+        self.hook = False
     class Commit:
         def __init__(self, message, *, author=None, committer=None, tree, reset=False):
             self.id = None
@@ -1134,7 +1163,6 @@ class PR:
             headers=headers
         )
         assert 200 <= r.status_code < 300, r.text
-        wait_for_hook()
 
     def delete_comment(self, cid, token=None):
         assert self.repo.hook
@@ -1247,13 +1275,27 @@ class LabelsProxy(collections.abc.MutableSet):
 
 class Environment:
     def __init__(self, port, db):
-        self._uid = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/common'.format(port)).authenticate(db, 'admin', 'admin', {})
-        self._object = xmlrpc.client.ServerProxy('http://localhost:{}/xmlrpc/2/object'.format(port))
+        self._port = port
         self._db = db
+        self._uid = None
+        self._password = None
+        self._object = xmlrpc.client.ServerProxy(f'http://localhost:{port}/xmlrpc/2/object')
+        self.login('admin', 'admin')
+
+    def with_user(self, login, password):
+        env = copy.copy(self)
+        env.login(login, password)
+        return env
+
+    def login(self, login, password):
+        self._password = password
+        self._uid = xmlrpc.client.ServerProxy(
+            f'http://localhost:{self._port}/xmlrpc/2/common'
+        ).authenticate(self._db, login, password, {})
 
     def __call__(self, model, method, *args, **kwargs):
         return self._object.execute_kw(
-            self._db, self._uid, 'admin',
+            self._db, self._uid, self._password,
             model, method,
             args, kwargs
         )
@@ -1402,6 +1444,11 @@ class Model:
     def __setattr__(self, fieldname, value):
         self._env(self._model, 'write', self._ids, {fieldname: value})
 
+    def __contains__(self, item: str | int) -> bool:
+        if isinstance(item, str):
+            return item in self._fields
+        return item in self.ids
+
     def __iter__(self):
         return (
             Model(self._env, self._model, [i], fields=self._fields)
@@ -1409,6 +1456,9 @@ class Model:
         )
 
     def mapped(self, path):
+        if callable(path):
+            return [path(r) for r in self]
+
         field, *rest = path.split('.', 1)
         descr = self._fields[field]
         if descr['type'] in ('many2one', 'one2many', 'many2many'):

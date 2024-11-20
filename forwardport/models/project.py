@@ -34,6 +34,8 @@ from odoo.addons.runbot_merge import git, utils
 from odoo.addons.runbot_merge.models.pull_requests import Branch
 from odoo.addons.runbot_merge.models.stagings_create import Message
 
+Conflict = tuple[str, str, str, list[str]]
+
 DEFAULT_DELTA = dateutil.relativedelta.relativedelta(days=3)
 
 _logger = logging.getLogger('odoo.addons.forwardport')
@@ -198,12 +200,13 @@ class PullRequests(models.Model):
             if existing:
                 old |= existing
                 continue
-
             to_create.append(vals)
             if vals.get('parent_id') and 'source_id' not in vals:
                 vals['source_id'] = self.browse(vals['parent_id']).root_id.id
-        new = super().create(to_create)
+        if not to_create:
+            return old
 
+        new = super().create(to_create)
         for pr in new:
             # added a new PR to an already forward-ported batch: port the PR
             if self.env['runbot_merge.batch'].search_count([
@@ -214,6 +217,8 @@ class PullRequests(models.Model):
                     'source': 'complete',
                     'pr_id': pr.id,
                 })
+        if not old:
+            return new
 
         new = iter(new)
         old = iter(old)
@@ -297,17 +302,29 @@ class PullRequests(models.Model):
         return sorted(commits, key=lambda c: idx[c['sha']])
 
 
-    def _create_fp_branch(self, source, target_branch):
+    def _create_port_branch(
+            self,
+            source: git.Repo,
+            target_branch: Branch,
+            *,
+            forward: bool,
+    ) -> tuple[typing.Optional[Conflict], str]:
         """ Creates a forward-port for the current PR to ``target_branch`` under
         ``fp_branch_name``.
 
-        :param target_branch: the branch to port forward to
-        :rtype: (None | (str, str, str, list[commit]), Repo)
+        :param source: the git repository to work with / in
+        :param target_branch: the branch to port ``self`` to
+        :param forward: whether this is a forward (``True``) or a back
+                        (``False``) port
+        :returns: a conflict if one happened, and the head of the port branch
+                  (either a succcessful port of the entire `self`, or a conflict
+                  commit)
         """
         logger = _logger.getChild(str(self.id))
         root = self.root_id
         logger.info(
-            "Forward-porting %s (%s) to %s",
+            "%s %s (%s) to %s",
+            "Forward-porting" if forward else "Back-porting",
             self.display_name, root.display_name, target_branch.name
         )
         fetch = source.with_config(stdout=subprocess.PIPE, stderr=subprocess.STDOUT).fetch()
@@ -356,7 +373,7 @@ class PullRequests(models.Model):
                 '--merge-base', commits[0]['parents'][0]['sha'],
                 target_branch.name,
                 root.head,
-            )
+            ).stdout.decode().splitlines(keepends=False)[0]
             # if there was a single commit, reuse its message when committing
             # the conflict
             if len(commits) == 1:
@@ -372,9 +389,28 @@ stderr:
 {err}
 """
 
-            target_head = source.stdout().rev_parse(target_branch.name).stdout.decode().strip()
+            # if a file is modified by the original PR and added by the forward
+            # port / conflict it's a modify/delete conflict: the file was
+            # deleted in the target branch, and the update (modify) in the
+            # original PR causes it to be added back
+            original_modified = set(conf.diff(
+                "--diff-filter=M", "--name-only",
+                "--merge-base", root.target.name,
+                root.head,
+            ).stdout.decode().splitlines(keepends=False))
+            conflict_added = set(conf.diff(
+                "--diff-filter=A", "--name-only",
+                target_branch.name,
+                tree,
+            ).stdout.decode().splitlines(keepends=False))
+            if modify_delete := (conflict_added & original_modified):
+                # rewrite the tree with conflict markers added to modify/deleted blobs
+                tree = conf.modify_delete(tree, modify_delete)
+
+            target_head = source.stdout().rev_parse(f"refs/heads/{target_branch.name}")\
+                .stdout.decode().strip()
             commit = conf.commit_tree(
-                tree=tree.stdout.decode().splitlines(keepends=False)[0],
+                tree=tree,
                 parents=[target_head],
                 message=str(msg),
                 author=author,
@@ -396,7 +432,7 @@ stderr:
         logger = _logger.getChild(str(self.id)).getChild('cherrypick')
 
         # target's head
-        head = repo.stdout().rev_parse(branch).stdout.decode().strip()
+        head = repo.stdout().rev_parse(f"refs/heads/{branch}").stdout.decode().strip()
 
         commits = self.commits()
         logger.info(
@@ -494,6 +530,8 @@ stderr:
             ('source_id', '!=', False),
             # active
             ('state', 'not in', ['merged', 'closed']),
+            # not ready
+            ('blocked', '!=', False),
             ('source_id.merge_date', '<', cutoff),
         ], order='source_id, id'), lambda p: p.source_id)
 
@@ -508,11 +546,8 @@ stderr:
                 continue
             source.reminder_backoff_factor += 1
 
-            # only keep the PRs which don't have an attached descendant)
-            pr_ids = {p.id for p in prs}
-            for pr in prs:
-                pr_ids.discard(pr.parent_id.id)
-            for pr in (p for p in prs if p.id in pr_ids):
+            # only keep the PRs which don't have an attached descendant
+            for pr in set(prs).difference(p.parent_id for p in prs):
                 self.env.ref('runbot_merge.forwardport.reminder')._send(
                     repository=pr.repository,
                     pull_request=pr.number,

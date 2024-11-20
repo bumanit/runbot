@@ -217,7 +217,7 @@ class FreezeWizard(models.Model):
             for r in self.project_id.repo_ids
         }
         for repo, copy in repos.items():
-            copy.fetch(git.source_url(repo), '+refs/heads/*:refs/heads/*')
+            copy.fetch(git.source_url(repo), '+refs/heads/*:refs/heads/*', no_tags=True)
         all_prs = self.release_pr_ids.pr_id | self.bump_pr_ids.pr_id
         for pr in all_prs:
             repos[pr.repository].fetch(
