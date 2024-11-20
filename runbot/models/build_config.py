@@ -879,7 +879,7 @@ class ConfigStep(models.Model):
             ).mapped('base_bundle_id').filtered('to_upgrade').mapped('last_done_batch')
 
     def _reference_batches_upgrade(self, batch, category_id):
-        if not batch.bundle_id.to_upgrade:
+        if not batch.bundle_id.base_id.to_upgrade:
             return self.env['runbot.batch']
         bundle = batch.bundle_id
         target_refs_bundles = self.env['runbot.bundle']
