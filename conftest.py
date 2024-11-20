@@ -1440,6 +1440,11 @@ class Model:
     def __setattr__(self, fieldname, value):
         self._env(self._model, 'write', self._ids, {fieldname: value})
 
+    def __contains__(self, item: str | int) -> bool:
+        if isinstance(item, str):
+            return item in self._fields
+        return item in self.ids
+
     def __iter__(self):
         return (
             Model(self._env, self._model, [i], fields=self._fields)
