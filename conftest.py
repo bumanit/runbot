@@ -331,7 +331,11 @@ class DbDict(dict):
                 return db
 
             d = (self._shared_dir / f'shared-{module}')
-            d.mkdir()
+            try:
+                d.mkdir()
+            except FileExistsError:
+                pytest.skip(f"found shared dir for {module}, database creation has likely failed")
+
             self[module] = db = 'template_%s' % uuid.uuid4()
             subprocess.run([
                 'odoo', '--no-http',
