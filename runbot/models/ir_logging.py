@@ -40,7 +40,7 @@ class IrLogging(models.Model):
                 if build.local_state != 'running':
                     if ir_log['level'].upper() == 'WARNING':
                         build.local_result = 'warn'
-                    elif ir_log['level'].upper() == 'ERROR':
+                    elif ir_log['level'].upper() not in ('INFO', 'SEPARATOR', ''):
                         build.local_result = 'ko'
         return super().create(vals_list)
 
