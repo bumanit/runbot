@@ -61,8 +61,11 @@ class IrLogging(models.Model):
             if ir_logging.level in ('ERROR', 'CRITICAL', 'WARNING') and ir_logging.type == 'server':
                 fingerprints[self.env['runbot.build.error.content']._digest(cleaning_regexes._r_sub(ir_logging.message))].append(ir_logging)
         for build_error_content in self.env['runbot.build.error.content'].search([('fingerprint', 'in', list(fingerprints.keys()))]).sorted(lambda ec: not ec.error_id.active):
-            for ir_logging in fingerprints[build_error_content.fingerprint]:
+            ir_logs = fingerprints[build_error_content.fingerprint]
+            for ir_logging in ir_logs:
                 ir_logging.error_content_id = build_error_content.id
+            if ir_logs:
+                fingerprints.pop(build_error_content.fingerprint)
 
     def _prepare_create_values(self, vals_list):
         # keep the given create date
