@@ -516,6 +516,21 @@ class BuildErrorContent(models.Model):
         for errors_content_to_merge in to_merge:
             errors_content_to_merge._merge()
 
+    def action_find_duplicates(self):
+        rg = [r['id_arr'] for r in self.env['runbot.build.error.content'].read_group([], ['id_count:count(id)', 'id_arr:array_agg(id)', 'fingerprint'], ['fingerprint']) if r['id_count'] >1]
+        duplicate_ids = []
+        for ids_lists in rg:
+            duplicate_ids += ids_lists
+
+        return {
+            "type": "ir.actions.act_window",
+            "res_model": "runbot.build.error.content",
+            "domain": [('id', 'in', duplicate_ids)],
+            "context": {"create": False, 'group_by': ['fingerprint']},
+            "name": "Duplicate Error contents",
+            'view_mode': 'tree,form'
+        }
+
 
 class BuildErrorTag(models.Model):
 

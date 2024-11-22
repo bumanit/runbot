@@ -241,6 +241,7 @@
                   create="false"
                   >
                 <header>
+                  <button name="action_find_duplicates" type="object" string="Find duplicates" display="always"/>
                 </header>
                 <field name="error_display_id" optional="show"/>
                 <field name="module_name" optional="show" readonly="1"/>
@@ -393,7 +394,15 @@
         <field name="view_mode">tree,form</field>
     </record>
 
-
+    <record id="action_find_duplicates" model="ir.actions.server">
+      <field name="name">Find Duplicates</field>
+      <field name="model_id" ref="runbot.model_runbot_build_error_content"/>
+      <field name="type">ir.actions.server</field>
+      <field name="state">code</field>
+      <field name="code">
+          action = model._find_duplicates()
+      </field>
+    </record>
 
   </data>
 </odoo>
