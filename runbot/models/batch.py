@@ -188,7 +188,7 @@ class Batch(models.Model):
 
         pushed_repo = self.commit_link_ids.mapped('commit_id.repo_id')
         dependency_repos = triggers.mapped('dependency_ids')
-        all_repos = triggers.mapped('repo_ids') | dependency_repos
+        all_repos = triggers.mapped('repo_ids') | dependency_repos | project.repo_ids
         missing_repos = all_repos - pushed_repo
         foreign_projects = dependency_repos.mapped('project_id') - project
 
