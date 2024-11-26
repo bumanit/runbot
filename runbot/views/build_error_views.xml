@@ -219,6 +219,7 @@
               <field name="error_count" readonly="1"/>
               <field name="build_count" readonly="1"/>
               <field name="team_id"/>
+              <field name="responsible" optional="show"/>
               <field name="test_tags" optional="hide"/>
               <field name="tags_min_version_id" string="Tags Min" optional="hide"/>
               <field name="tags_max_version_id" string="Tags Max" optional="hide"/>
