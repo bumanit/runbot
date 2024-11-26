@@ -64,6 +64,8 @@ def route(routes, **kw):
                 response.qcontext['nb_build_errors'] = nb_build_errors
                 response.qcontext['nb_assigned_errors'] = nb_assigned_errors
                 response.qcontext['nb_team_errors'] = nb_team_errors
+                if 'page_info_state' not in response.qcontext:
+                    response.qcontext['page_info_state'] = 'ok'
             return response
         return response_wrap
     return decorator
@@ -215,6 +217,7 @@ class Runbot(Controller):
             'pager': pager,
             'project': bundle.project_id,
             'title': 'Bundle %s' % bundle.name,
+            'page_info_state': bundle.last_batch._get_global_result(),
         }
 
         return request.render('runbot.bundle', context)
@@ -239,7 +242,8 @@ class Runbot(Controller):
         context = {
             'batch': batch,
             'project': batch.bundle_id.project_id,
-            'title': 'Batch %s (%s)' % (batch.id, batch.bundle_id.name)
+            'title': 'Batch %s (%s)' % (batch.id, batch.bundle_id.name),
+            'page_info_state': batch._get_global_result(),
         }
         return request.render('runbot.batch', context)
 
@@ -330,6 +334,7 @@ class Runbot(Controller):
             'project': build.params_id.trigger_id.project_id,
             'title': 'Build %s' % build.id,
             'siblings': siblings,
+            'page_info_state': build.global_result,
             # following logic is not the most efficient but good enough
             'prev_ko': next((b for b in reversed(siblings) if b.id < build.id and b.global_result != 'ok'), Build),
             'prev_bu': next((b for b in reversed(siblings) if b.id < build.id), Build),
