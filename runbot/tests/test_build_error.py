@@ -180,7 +180,7 @@ class TestBuildError(RunbotCase):
         self.assertEqual(error_b.test_tags, False)
         self.assertEqual(error_b.active, False)
 
-    def test_merge_contents(self):
+    def test_relink_contents(self):
         build_a = self.create_test_build({'local_result': 'ko', 'local_state': 'done'})
         error_content_a = self.BuildErrorContent.create({'content': 'foo bar'})
         self.BuildErrorLink.create({'build_id': build_a.id, 'error_content_id': error_content_a.id})
@@ -192,7 +192,7 @@ class TestBuildError(RunbotCase):
         error_b = error_content_b.error_id
         self.assertNotEqual(error_a, error_b)
         self.assertEqual(self.BuildErrorContent.search([('fingerprint', '=', error_content_a.fingerprint)]), error_content_a | error_content_b)
-        (error_content_a | error_content_b)._merge()
+        (error_content_a | error_content_b)._relink()
         self.assertEqual(self.BuildErrorContent.search([('fingerprint', '=', error_content_a.fingerprint)]), error_content_a)
         self.assertTrue(error_a.active, 'The first merged error should stay active')
         self.assertFalse(error_b.active, 'The second merged error should have stay deactivated')
@@ -205,20 +205,20 @@ class TestBuildError(RunbotCase):
 
         error_content_c = self.BuildErrorContent.create({'content': 'foo foo'})
 
-        # let's ensure we cannot merge errors with different fingerprints
+        # let's ensure we cannot relink errors with different fingerprints
         with self.assertRaises(AssertionError):
-            (error_content_a | error_content_c)._merge()
+            (error_content_a | error_content_c)._relink()
 
-        # merge two build errors while the build <--> build_error relation already exists
+        # relink two build errors while the build <--> build_error relation already exists
         error_content_d = self.BuildErrorContent.create({'content': 'foo bar'})
         self.BuildErrorLink.create({'build_id': build_a.id, 'error_content_id': error_content_d.id})
-        (error_content_a | error_content_d)._merge()
+        (error_content_a | error_content_d)._relink()
         self.assertIn(build_a, error_content_a.build_error_link_ids.build_id)
         self.assertIn(build_a, error_content_a.build_ids)
         self.assertFalse(error_content_d.build_error_link_ids)
         self.assertFalse(error_content_d.build_ids)
 
-    def test_merge_simple(self):
+    def test_relink_simple(self):
         build_a = self.create_test_build({'local_result': 'ko', 'local_state': 'done'})
         error_content_a = self.BuildErrorContent.create({'content': 'foo bar'})
         error_a = error_content_a.error_id
@@ -231,7 +231,7 @@ class TestBuildError(RunbotCase):
         self.BuildErrorLink.create({'build_id': build_b.id, 'error_content_id': error_content_b.id})
 
         self.assertEqual(self.BuildErrorContent.search([('fingerprint', '=', error_content_a.fingerprint)]), error_content_a | error_content_b)
-        (error_content_a | error_content_b)._merge()
+        (error_content_a | error_content_b)._relink()
         self.assertEqual(self.BuildErrorContent.search([('fingerprint', '=', error_content_a.fingerprint)]), error_content_a)
         self.assertFalse(error_b.error_content_ids)
 
@@ -246,13 +246,13 @@ class TestBuildError(RunbotCase):
         tagged_error_content = self.BuildErrorContent.create({'content': 'foo bar'})
         tagged_error = tagged_error_content.error_id
         tagged_error.test_tags = 'bartag'
-        (error_content_a | tagged_error_content)._merge()
+        (error_content_a | tagged_error_content)._relink()
         self.assertEqual(error_a.test_tags, 'footag')
         self.assertEqual(tagged_error.test_tags, 'bartag')
         self.assertTrue(error_a.active)
         self.assertTrue(tagged_error.active, 'A differently tagged error cannot be deactivated by the merge')
 
-    def test_merge_linked(self):
+    def test_relink_linked(self):
         build_a = self.create_test_build({'local_result': 'ko', 'local_state': 'done'})
         error_content_a = self.BuildErrorContent.create({'content': 'foo bar'})
         error_a = error_content_a.error_id
@@ -267,7 +267,7 @@ class TestBuildError(RunbotCase):
         linked_error = self.BuildErrorContent.create({'content': 'foo foo bar', 'error_id': error_b.id})
 
         self.assertEqual(self.BuildErrorContent.search([('fingerprint', '=', error_content_a.fingerprint)]), error_content_a | error_content_b)
-        (error_content_a | error_content_b)._merge()
+        (error_content_a | error_content_b)._relink()
         self.assertEqual(self.BuildErrorContent.search([('fingerprint', '=', error_content_a.fingerprint)]), error_content_a)
         self.assertEqual(error_b.error_content_ids, linked_error)
         self.assertTrue(error_a.active, 'Main error should have been reactivated')
