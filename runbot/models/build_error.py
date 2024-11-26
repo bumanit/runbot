@@ -486,6 +486,11 @@ class BuildErrorContent(models.Model):
             if not error.error_content_ids:
                 base_error._merge(error)
 
+    def _get_duplicates(self):
+        """ returns a list of lists of duplicates"""
+        domain = [('id', 'in', self.ids)] if self else []
+        return [r['id_arr'] for r in self.env['runbot.build.error.content'].read_group(domain, ['id_count:count(id)', 'id_arr:array_agg(id)', 'fingerprint'], ['fingerprint']) if r['id_count'] >1]
+
     ####################
     #   Actions
     ####################
@@ -521,8 +526,13 @@ class BuildErrorContent(models.Model):
         for errors_content_to_merge in to_merge:
             errors_content_to_merge._relink()
 
+    def action_deduplicate(self):
+        rg = self._get_duplicates()
+        for ids_list in rg:
+            self.env['runbot.build.error.content'].browse(ids_list)._relink()
+
     def action_find_duplicates(self):
-        rg = [r['id_arr'] for r in self.env['runbot.build.error.content'].read_group([], ['id_count:count(id)', 'id_arr:array_agg(id)', 'fingerprint'], ['fingerprint']) if r['id_count'] >1]
+        rg = self._get_duplicates()
         duplicate_ids = []
         for ids_lists in rg:
             duplicate_ids += ids_lists
