@@ -451,10 +451,10 @@ class BuildErrorContent(models.Model):
     def _search_trigger_ids(self, operator, value):
         return [('build_error_link_ids.trigger_id', operator, value)]
 
-    def _merge(self):
+    def _relink(self):
         if len(self) < 2:
             return
-        _logger.debug('Merging errors %s', self)
+        _logger.debug('Relinking error contents %s', self)
         base_error_content = self[0]
         base_error = base_error_content.error_id
         errors = self.env['runbot.build.error']
@@ -515,7 +515,7 @@ class BuildErrorContent(models.Model):
             to_merge.append(errors_content_by_fingerprint.filtered(lambda r: r.fingerprint == fingerprint))
         # this must be done in other iteration since filtered may fail because of unlinked records from _merge
         for errors_content_to_merge in to_merge:
-            errors_content_to_merge._merge()
+            errors_content_to_merge._relink()
 
     def action_find_duplicates(self):
         rg = [r['id_arr'] for r in self.env['runbot.build.error.content'].read_group([], ['id_count:count(id)', 'id_arr:array_agg(id)', 'fingerprint'], ['fingerprint']) if r['id_count'] >1]
