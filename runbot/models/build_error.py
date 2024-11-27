@@ -462,7 +462,8 @@ class BuildErrorContent(models.Model):
         content_to_remove = self.env['runbot.build.error.content']
         for error_content in self[1:]:
             assert base_error_content.fingerprint == error_content.fingerprint, f'Errors {base_error_content.id} and {error_content.id} have a different fingerprint'
-            links_to_relink = error_content.build_error_link_ids.filtered(lambda rec: rec.build_id.id not in base_error_content.build_error_link_ids.build_id.ids)
+            existing_build_ids = set(base_error_content.build_error_link_ids.build_id.ids)
+            links_to_relink = error_content.build_error_link_ids.filtered(lambda rec: rec.build_id.id not in existing_build_ids)
             links_to_remove |= error_content.build_error_link_ids - links_to_relink  # a link already exists to the base error
 
             links_to_relink.error_content_id = base_error_content
