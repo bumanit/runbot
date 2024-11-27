@@ -109,7 +109,11 @@ class Batch(models.Model):
     def _process(self):
         processed = self.browse()
         for batch in self:
-            if batch.state == 'preparing' and batch.last_update <= fields.Datetime.now() - datetime.timedelta(seconds=60):
+            process_delay = batch.bundle_id.project_id.process_delay
+            if batch.state == 'preparing' and (
+                process_delay == 0 or
+                batch.last_update <= fields.Datetime.now() - datetime.timedelta(seconds=process_delay)
+            ):
                 batch._prepare()
                 processed |= batch
             if batch.state == 'ready':

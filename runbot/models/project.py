@@ -1,4 +1,5 @@
 from odoo import models, fields, api
+from odoo.exceptions import ValidationError
 
 
 class Project(models.Model):
@@ -22,6 +23,12 @@ class Project(models.Model):
     staging_prefix = fields.Char('staging branches prefix', default="staging.")
     hidden = fields.Boolean('Hidden', help='Hide this project from the main page')
     active = fields.Boolean("Active", default=True)
+    process_delay = fields.Integer('Process delay', default=60, required=True, help="Delay between a push and a batch starting its process.")
+
+    @api.constrains('process_delay')
+    def _constraint_process_delay(self):
+        if any(project.process_delay < 0 for project in self):
+            raise ValidationError("Process delay should be positive.")
 
     @api.model_create_multi
     def create(self, vals_list):

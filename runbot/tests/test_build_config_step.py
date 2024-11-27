@@ -236,7 +236,6 @@ class TestBuildConfigStepRestore(TestBuildConfigStepCommon):
         # setup master branch
         master_batch = self.master_bundle._force()
         with mute_logger('odoo.addons.runbot.models.batch'):
-            master_batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
             master_batch._process()
         reference_slot = master_batch.slot_ids
         trigger = reference_slot.trigger_id
@@ -264,7 +263,6 @@ class TestBuildConfigStepRestore(TestBuildConfigStepCommon):
         # create dev build
         dev_batch = self.dev_bundle._force()
         with mute_logger('odoo.addons.runbot.models.batch'):
-            dev_batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
             dev_batch._process()
         dev_batch.base_reference_batch_id = master_batch  # not tested, this is not the purpose of this test
         dev_build = dev_batch.slot_ids.build_id

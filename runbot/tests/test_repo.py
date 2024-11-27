@@ -252,7 +252,6 @@ class TestRepo(RunbotCaseMinimalSetup):
             return {}
 
         self.patchers['github_patcher'].side_effect = github2
-        bundle.last_batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         bundle.last_batch._process()
         self.assertEqual(last_batch.commit_link_ids.commit_id.mapped('subject'), ['Server subject', 'Addons subject'])
 

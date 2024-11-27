@@ -90,7 +90,6 @@ class TestBuildParams(RunbotCaseMinimalSetup):
 
         # prepare last_batch
         bundle = self.env['runbot.bundle'].search([('name', '=', branch_a_name), ('project_id', '=', self.project.id)])
-        bundle.last_batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         bundle.last_batch._process()
         build_slot = bundle.last_batch.slot_ids.filtered(lambda rec: rec.trigger_id == self.trigger_server)
         self.assertEqual(build_slot.build_id.params_id.config_id, self.trigger_server.config_id)
@@ -119,7 +118,6 @@ class TestBuildParams(RunbotCaseMinimalSetup):
             'bundle_id': bundle.id,
             'config_id': custom_config.id
         })
-        bundle.last_batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         bundle.last_batch._process()
         build_slot = bundle.last_batch.slot_ids.filtered(lambda rec: rec.trigger_id == self.trigger_server)
         self.assertEqual(build_slot.build_id.params_id.config_id, custom_config)
@@ -147,7 +145,6 @@ class TestBuildParams(RunbotCaseMinimalSetup):
         self.repo_server._update_batches()
         bundle = self.Bundle.search([('name', '=', branch_a_name), ('project_id', '=', self.project.id)])
         batch = bundle.last_batch
-        batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch._process()
         self.assertEqual(batch.slot_ids.mapped('trigger_id.name'), ['minimal_check', 'Server trigger', 'Addons trigger'], 'All three slot should have been created')
         minimal_check_build = batch.slot_ids.build_id
@@ -616,7 +613,6 @@ class TestGc(RunbotCaseMinimalSetup):
 
         # prepare last_batch
         bundle_a = self.env['runbot.bundle'].search([('name', '=', branch_a_name)])
-        bundle_a.last_batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         bundle_a.last_batch._process()
 
         # now we should have a build in pending state in the bundle
@@ -631,7 +627,6 @@ class TestGc(RunbotCaseMinimalSetup):
         self.push_commit(self.remote_server_dev, branch_b_name, 'other subject', sha='cacad0d0')
         self.repo_server._update_batches()
         bundle_b = self.env['runbot.bundle'].search([('name', '=', branch_b_name)])
-        bundle_b.last_batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         bundle_b.last_batch._process()
 
 
@@ -651,7 +646,6 @@ class TestGc(RunbotCaseMinimalSetup):
         self.push_commit(self.remote_server_dev, branch_a_name, 'new subject', sha='d0cad0ca')
         self.repo_server._update_batches()
         bundle_a = self.env['runbot.bundle'].search([('name', '=', branch_a_name)])
-        bundle_a.last_batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         bundle_a.last_batch._process()
         build_a_last = bundle_a.last_batch.slot_ids[0].build_id
         self.assertEqual(build_a_last.local_state, 'pending')
