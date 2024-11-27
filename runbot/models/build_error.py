@@ -67,6 +67,10 @@ def _compute_related_error_content_ids(field_name):
             record[field_name] = record.error_content_ids[field_name]
     return _compute
 
+def _search_related_error_content_ids(field_name):
+    def _search(self, operator, value):
+        return [(f'error_content_ids.{field_name}', operator, value)]
+    return _search
 
 class BuildError(models.Model):
     _name = "runbot.build.error"
@@ -96,13 +100,13 @@ class BuildError(models.Model):
     tags_max_version_id = fields.Many2one('runbot.version', 'Tags Max version', help="Maximal version where the test tags will be applied.")
 
     # Build error related data
-    build_error_link_ids = fields.Many2many('runbot.build.error.link', compute=_compute_related_error_content_ids('build_error_link_ids'))
+    build_error_link_ids = fields.Many2many('runbot.build.error.link', compute=_compute_related_error_content_ids('build_error_link_ids'), search=_search_related_error_content_ids('build_error_link_ids'))
     unique_build_error_link_ids = fields.Many2many('runbot.build.error.link', compute='_compute_unique_build_error_link_ids')
-    build_ids = fields.Many2many('runbot.build', compute=_compute_related_error_content_ids('build_ids'))
-    bundle_ids = fields.Many2many('runbot.bundle', compute=_compute_related_error_content_ids('bundle_ids'))
-    version_ids = fields.Many2many('runbot.version', string='Versions', compute=_compute_related_error_content_ids('version_ids'))
+    build_ids = fields.Many2many('runbot.build', compute=_compute_related_error_content_ids('build_ids'), search=_search_related_error_content_ids('build_ids'))
+    bundle_ids = fields.Many2many('runbot.bundle', compute=_compute_related_error_content_ids('bundle_ids'), search=_search_related_error_content_ids('bundle_ids'))
+    version_ids = fields.Many2many('runbot.version', string='Versions', compute=_compute_related_error_content_ids('version_ids'), search=_search_related_error_content_ids('version_ids'))
     trigger_ids = fields.Many2many('runbot.trigger', string='Triggers', compute=_compute_related_error_content_ids('trigger_ids'), store=True)
-    tag_ids = fields.Many2many('runbot.build.error.tag', string='Tags', compute=_compute_related_error_content_ids('tag_ids'))
+    tag_ids = fields.Many2many('runbot.build.error.tag', string='Tags', compute=_compute_related_error_content_ids('tag_ids'), search=_search_related_error_content_ids('tag_ids'))
 
     random = fields.Boolean('Random', compute="_compute_random", store=True)
 
