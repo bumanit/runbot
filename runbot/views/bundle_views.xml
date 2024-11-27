@@ -16,6 +16,7 @@
                     <field name="token" password="True"/>
                     <field name="hidden"/>
                     <field name="active"/>
+                    <field name="process_delay"/>
                 </group>
             </form>
         </field>

@@ -208,7 +208,6 @@ class TestUpgradeFlow(RunbotCase):
         # create nightly
 
         batch_nigthly = bundle._force(self.nightly_category.id)
-        batch_nigthly.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch_nigthly._process()
         self.assertEqual(batch_nigthly.category_id, self.nightly_category)
         builds_nigthly = {}
@@ -235,7 +234,6 @@ class TestUpgradeFlow(RunbotCase):
         batch_nigthly.state = 'done'
 
         batch_weekly = bundle._force(self.weekly_category.id)
-        batch_weekly.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch_weekly._process()
         self.assertEqual(batch_weekly.category_id, self.weekly_category)
         builds_weekly = {}
@@ -253,7 +251,6 @@ class TestUpgradeFlow(RunbotCase):
         batch_weekly.state = 'done'
 
         batch_default = bundle._force()
-        batch_default.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch_default._process()
         build = batch_default.slot_ids.filtered(lambda s: s.trigger_id == self.trigger_server).build_id
         build.local_state = 'done'
@@ -273,7 +270,6 @@ class TestUpgradeFlow(RunbotCase):
             self.trigger_upgrade_server.flush_recordset(['upgrade_step_id'])
 
         batch = self.master_bundle._force()
-        batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch._process()
         upgrade_current_build = batch.slot_ids.filtered(lambda slot: slot.trigger_id == self.trigger_upgrade_server).build_id
         #host = self.env['runbot.host']._get_current()
@@ -340,7 +336,6 @@ class TestUpgradeFlow(RunbotCase):
         })
 
         batch = self.master_bundle._force(self.nightly_category.id)
-        batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch._process()
         upgrade_nightly = batch.slot_ids.filtered(lambda slot: slot.trigger_id == trigger_upgrade_addons_nightly).build_id
         #upgrade_nightly.host = host.name
@@ -491,7 +486,6 @@ class TestUpgradeFlow(RunbotCase):
 
         # test_build_references
         batch = self.master_bundle._force()
-        batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch._process()
         upgrade_slot = batch.slot_ids.filtered(lambda slot: slot.trigger_id == self.trigger_upgrade_server)
         self.assertTrue(upgrade_slot)
@@ -509,7 +503,6 @@ class TestUpgradeFlow(RunbotCase):
 
         self.trigger_upgrade_server.upgrade_step_id.upgrade_from_all_intermediate_version = True
         batch = self.master_bundle._force()
-        batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch._process()
         upgrade_build = batch.slot_ids.filtered(lambda slot: slot.trigger_id == self.trigger_upgrade_server).build_id
         self.assertEqual(
@@ -548,7 +541,6 @@ class TestUpgradeFlow(RunbotCase):
         self.assertEqual(bundle_133.name, 'saas-13.3')
 
         batch13 = bundle_13._force()
-        batch13.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch13._process()
         upgrade_complement_build_13 = batch13.slot_ids.filtered(lambda slot: slot.trigger_id == trigger_upgrade_complement).build_id
         # upgrade_complement_build_13.host = host.name

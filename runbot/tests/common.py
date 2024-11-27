@@ -64,7 +64,7 @@ class RunbotCase(TransactionCase):
         self.Step = self.env['runbot.build.config.step'].with_context(mail_create_nolog=True, mail_notrack=True)
         self.Commit = self.env['runbot.commit']
         self.Runbot = self.env['runbot.runbot']
-        self.project = self.env['runbot.project'].create({'name': 'Tests'})
+        self.project = self.env['runbot.project'].create({'name': 'Tests', 'process_delay': 0})
         self.repo_server = self.Repo.create({
             'name': 'server',
             'project_id': self.project.id,
@@ -251,7 +251,6 @@ class RunbotCase(TransactionCase):
         self.assertEqual(triggers.repo_ids + triggers.dependency_ids, self.remote_addons.repo_id + self.remote_server.repo_id)
 
         batch = self.branch_addons.bundle_id._force()
-        batch.last_update = fields.Datetime.now() - datetime.timedelta(seconds=60)
         batch._process()
 
 

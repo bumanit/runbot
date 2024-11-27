@@ -1,4 +1,5 @@
 from . import common
+from . import test_batch
 from . import test_repo
 from . import test_build_error
 from . import test_branch
