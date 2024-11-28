@@ -104,6 +104,7 @@ class TestBuildParams(RunbotCaseMinimalSetup):
         branch_a_name = 'master-test-something'
         self.push_commit(self.remote_server_dev, branch_a_name, 'nice subject', sha='d0d0caca')
         # batch preparation
+        self.repo_server.project_id.process_delay = 10
         self.repo_server._update_batches()
 
         # create a custom config and a new trigger
@@ -118,6 +119,8 @@ class TestBuildParams(RunbotCaseMinimalSetup):
             'bundle_id': bundle.id,
             'config_id': custom_config.id
         })
+
+        self.repo_server.project_id.process_delay = 0
         bundle.last_batch._process()
         build_slot = bundle.last_batch.slot_ids.filtered(lambda rec: rec.trigger_id == self.trigger_server)
         self.assertEqual(build_slot.build_id.params_id.config_id, custom_config)

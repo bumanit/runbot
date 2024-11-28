@@ -632,6 +632,7 @@ class Repo(models.Model):
                         'state': 'preparing',
                     })
                     bundle.last_batch = preparing
+                    preparing._process()  # process in case we have a 0 wait on project
 
                 if bundle.last_batch.state == 'preparing':
                     bundle.last_batch._new_commit(branch)
