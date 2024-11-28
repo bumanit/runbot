@@ -86,6 +86,7 @@ class TestRepo(RunbotCaseMinimalSetup):
         self.commit_list[self.repo_server.id] = first_commit
 
         self.patchers['github_patcher'].side_effect = github
+        self.repo_server.project_id.process_delay = 10
         repos._update_batches()
 
         dev_branch = self.env['runbot.branch'].search([('remote_id', '=', self.remote_server_dev.id)])
@@ -252,6 +253,8 @@ class TestRepo(RunbotCaseMinimalSetup):
             return {}
 
         self.patchers['github_patcher'].side_effect = github2
+
+        self.repo_server.project_id.process_delay = 0
         bundle.last_batch._process()
         self.assertEqual(last_batch.commit_link_ids.commit_id.mapped('subject'), ['Server subject', 'Addons subject'])
 
