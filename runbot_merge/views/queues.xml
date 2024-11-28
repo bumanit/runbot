@@ -122,20 +122,36 @@
                             <field name="active"/>
                         </group>
                     </group>
-                    <group invisible="patch and not commit">
-                        <group colspan="4">
-                            <field name="commit"/>
-                        </group>
-                    </group>
-                    <group invisible="commit and not patch">
-                        <group colspan="4">
-                            <field name="format" colspan="4"/>
-                            <field name="patch" widget="ace"/>
+                    <notebook>
+                        <page string="commit" invisible="patch and not commit">
+                            <group colspan="4">
+                                <field name="commit"/>
+                            </group>
+                        </page>
+                        <page string="patch" invisible="commit and not patch">
+                            <field name="patch" widget="ace" nolabel="1" colspan="2"/>
                                 <!-- no diff/patch mode support -->
                                 <!-- options="{'mode': 'patch'}"/> -->
-                            <field name="message" colspan="4"/>
-                        </group>
-                    </group>
+                            <group colspan="4" string="metadata">
+                                <group>
+                                    <field name="format"/>
+                                </group>
+                                <group>
+                                    <field name="author"/>
+                                    <field name="authordate" invisible="not authordate"/>
+                                    <field name="committer" invisible="not committer"/>
+                                    <field name="commitdate" invisible="not commitdate"/>
+                                </group>
+                                <separator string="message" cols="4"/>
+                                <field name="message" nolabel="1"/>
+                                <field name="file_ids" nolabel="1">
+                                    <tree>
+                                        <field name="display_name" string="File Name"/>
+                                    </tree>
+                                </field>
+                            </group>
+                        </page>
+                    </notebook>
                 </sheet>
                 <div class="oe_chatter">
                     <field name="message_follower_ids" widget="mail_followers"/>

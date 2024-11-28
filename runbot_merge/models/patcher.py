@@ -17,7 +17,7 @@ from email import message_from_string, policy
 from email.utils import parseaddr
 from typing import Union
 
-from odoo import models, fields, api
+from odoo import models, fields, api, Command
 from odoo.exceptions import ValidationError
 from odoo.tools.mail import plaintext2html
 
@@ -122,6 +122,13 @@ class PatchFailure(Exception):
     pass
 
 
+class PatchFile(models.TransientModel):
+    _name = "runbot_merge.patch.file"
+    _description = "metadata for single file to patch"
+
+    name = fields.Char()
+
+
 class Patch(models.Model):
     _name = "runbot_merge.patch"
     _inherit = ['mail.thread']
@@ -137,6 +144,16 @@ class Patch(models.Model):
         ("format-patch", "format-patch"),
         ("show", "show"),
     ], compute="_compute_patch_meta")
+    author = fields.Char(compute="_compute_patch_meta")
+    # TODO: should be a datetime, parse date
+    authordate = fields.Char(compute="_compute_patch_meta")
+    committer = fields.Char(compute="_compute_patch_meta")
+    # TODO: should be a datetime, parse date
+    commitdate = fields.Char(compute="_compute_patch_meta")
+    file_ids = fields.One2many(
+        "runbot_merge.patch.file",
+        compute="_compute_patch_meta",
+    )
     message = fields.Text(compute="_compute_patch_meta")
 
     _sql_constraints = [
@@ -145,13 +162,37 @@ class Patch(models.Model):
 
     @api.depends("patch")
     def _compute_patch_meta(self) -> None:
+        File = self.env['runbot_merge.patch.file']
         for p in self:
             if r := p._parse_patch():
                 p.format = r.kind
+                match r.author:
+                    case [name, email]:
+                        p.author = f"{name} <{email}>"
+                    case [name, email, date]:
+                        p.author = f"{name} <{email}>"
+                        p.authordate = date
+                match r.committer:
+                    case [name, email]:
+                        p.committer = f"{name} <{email}>"
+                    case [name, email, date]:
+                        p.committer = f"{name} <{email}>"
+                        p.commitdate = date
+                p.file_ids = File.concat(*(
+                    File.new({'name': m['file_from']})
+                    for m in FILE_PATTERN.finditer(p.patch)
+                ))
                 p.message = r.message
             else:
-                p.format = False
-                p.message = False
+                p.update({
+                    'format': False,
+                    'author': False,
+                    'authordate': False,
+                    'committer': False,
+                    'commitdate': False,
+                    'file_ids': False,
+                    'message': False,
+                })
 
     def _parse_patch(self) -> ParseResult | None:
         if not self.patch:
