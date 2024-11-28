@@ -53,20 +53,20 @@ def expect(line: str, starts_with: str, message: str) -> str:
 def parse_show(p: Patch) -> ParseResult:
     # headers are Author, Date or Author, AuthorDate, Commit, CommitDate
     # commit message is indented 4 spaces
-    lines = iter(p.patch.splitlines(keepends=True))
-    if not next(lines).startswith("commit "):
+    lines = (l + '\n' for l in p.patch.splitlines(keepends=False))
+    if not next(lines, '').startswith("commit "):
         raise ValidationError("Invalid patch")
     name, email = parseaddr(
-        expect(next(lines), "Author:", "Missing author")
+        expect(next(lines, ''), "Author:", "Missing author")
             .split(maxsplit=1)[1])
-    date: str = next(lines)
+    date: str = next(lines, '')
     header, date = date.split(maxsplit=1)
     author = (name, email, date)
     if header.startswith("Date:"):
         committer = author
     elif header.startswith("AuthorDate:"):
-        commit = expect(next(lines), "Commit:", "Missing committer")
-        commit_date = expect(next(lines), "CommitDate:", "Missing commit date")
+        commit = expect(next(lines, ''), "Commit:", "Missing committer")
+        commit_date = expect(next(lines, ''), "CommitDate:", "Missing commit date")
         name, email = parseaddr(commit.split(maxsplit=1)[1])
         committer = (name, email, commit_date.split(maxsplit=1)[1])
     else:
@@ -75,11 +75,11 @@ def parse_show(p: Patch) -> ParseResult:
             f"found {header}.\nOnly 'medium' and 'fuller' formats are supported")
 
     # skip possible extra headers before the message
-    while next(lines) != ' \n':
+    while next(lines, ' \n') != ' \n':
         continue
 
     body = []
-    while (l := next(lines)) != ' \n':
+    while (l := next(lines, ' \n')) != ' \n':
         body.append(l.removeprefix('    '))
 
     # remainder should be the patch
@@ -101,11 +101,11 @@ def parse_format_patch(p: Patch) -> ParseResult:
     msg = re.sub(r'^\[PATCH( \d+/\d+)?\] ', '', m['subject'])
     body, _, rest = m.get_payload().partition('---\n')
     if body:
-        msg += '\n\n' + body
+        msg += '\n\n' + body.replace('\r\n', '\n')
 
     # split off the signature, per RFC 3676 § 4.3.
     # leave the diffstat in as it *should* not confuse tooling?
-    patch, _, _ = rest.rpartition("-- \n")
+    patch, _, _ = rest.partition("-- \n")
     # git (diff, show, format-patch) adds command and index headers to every
     # file header, which patch(1) chokes on, strip them... but maybe this should
     # extract the udiff sections instead?

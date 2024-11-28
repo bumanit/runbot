@@ -196,6 +196,14 @@ def test_apply_udiff(env, project, repo, users):
 @pytest.mark.parametrize('patch', [
     pytest.param(FORMAT_PATCH_XMO, id='xmo'),
     pytest.param(FORMAT_PATCH_MAT, id='mat'),
+    pytest.param(
+        FORMAT_PATCH_XMO.replace('\n', '\r\n'),
+        id='windows',
+    ),
+    pytest.param(
+        FORMAT_PATCH_XMO.rsplit('-- \n')[0],
+        id='no-signature',
+    )
 ])
 def test_apply_format_patch(env, project, repo, users, patch):
     p = env['runbot_merge.patch'].create({
