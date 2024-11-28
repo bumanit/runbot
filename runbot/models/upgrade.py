@@ -6,8 +6,9 @@ from odoo.exceptions import UserError
 class UpgradeExceptions(models.Model):
     _name = 'runbot.upgrade.exception'
     _description = 'Upgrade exception'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
 
-    active = fields.Boolean('Active', default=True)
+    active = fields.Boolean('Active', default=True, tracking=True)
     elements = fields.Text('Elements', required=True)
     bundle_id = fields.Many2one('runbot.bundle', index=True)
     info = fields.Text('Info')
