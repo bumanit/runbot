@@ -146,7 +146,7 @@ class ConfigStep(models.Model):
     # install_odoo
     create_db = fields.Boolean('Create Db', default=True, tracking=True)  # future
     custom_db_name = fields.Char('Custom Db Name', tracking=True)  # future
-    install_modules = fields.Char('Modules to install', help="List of module patterns to install, use * to install all available modules, prefix the pattern with dash to remove the module.", default='')
+    install_modules = fields.Char('Modules to install', help="List of module patterns to install, use * to install all available modules, prefix the pattern with dash to remove the module.", default='', tracking=True)
     db_name = fields.Char('Db Name', compute='_compute_db_name', inverse='_inverse_db_name', tracking=True)
     cpu_limit = fields.Integer('Cpu limit', default=3600, tracking=True)
     container_cpus = fields.Integer('Allowed CPUs', help='Allowed container CPUs. Fallback on config parameter if 0.', default=0, tracking=True)
