@@ -30,7 +30,6 @@
         ],
         'web.assets_backend': [
             'runbot_merge/static/scss/runbot_merge_backend.scss',
-            'runbot_merge/static/src/project_freeze/index.js',
         ],
     },
     'post_load': 'enable_sentry',

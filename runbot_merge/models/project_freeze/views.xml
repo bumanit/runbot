@@ -3,7 +3,7 @@
         <field name="name">Freeze Wizard Configuration Screen</field>
         <field name="model">runbot_merge.project.freeze</field>
         <field name="arch" type="xml">
-            <form js_class="freeze_wizard">
+            <form>
                 <sheet>
                     <div class="alert alert-warning" role="alert"
                          invisible="not errors">
