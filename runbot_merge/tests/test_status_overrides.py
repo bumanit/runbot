@@ -21,6 +21,7 @@ def test_finding(env):
     project = env['runbot_merge.project'].create({
         'name': 'test',
         'github_token': 'xxx', 'github_prefix': 'no',
+        'github_name': "xxx", 'github_email': "xxx@example.org",
     })
     repo_1 = env['runbot_merge.repository'].create({'project_id': project.id, 'name': 'r1'})
     repo_2 = env['runbot_merge.repository'].create({'project_id': project.id, 'name': 'r2'})

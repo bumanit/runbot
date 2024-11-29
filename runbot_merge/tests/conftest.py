@@ -10,6 +10,8 @@ def project(env, config):
         'name': 'odoo',
         'github_token': config['github']['token'],
         'github_prefix': 'hansen',
+        'github_name': config['github']['name'],
+        'github_email': "foo@example.org",
         'branch_ids': [(0, 0, {'name': 'master'})],
     })
 

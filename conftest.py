@@ -179,7 +179,8 @@ def rolemap(request, config):
         r.raise_for_status()
 
         user = rolemap[role] = r.json()
-        data['user'] = user['login']
+        n = data['user'] = user['login']
+        data.setdefault('name', n)
     return rolemap
 
 @pytest.fixture

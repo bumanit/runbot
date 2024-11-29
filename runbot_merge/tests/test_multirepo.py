@@ -939,6 +939,8 @@ class TestSubstitutions:
         p = env['runbot_merge.project'].create({
             'name': 'proj',
             'github_token': 'wheeee',
+            'github_name': "yyy",
+            'github_email': "zzz@example.org",
             'repo_ids': [(0, 0, {'name': 'xxx/xxx'})],
             'branch_ids': [(0, 0, {'name': 'master'})]
         })
@@ -1058,6 +1060,8 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
         'name': 'Project 1',
         'github_token': gh_token,
         'github_prefix': 'hansen',
+        'github_name': config['github']['name'],
+        'github_email': "foo@example.org",
         'repo_ids': [(0, 0, {
             'name': r1.name,
             'group_id': False,
@@ -1079,6 +1083,8 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
         'name': "Project 2",
         'github_token': gh_token,
         'github_prefix': 'hansen',
+        'github_name': config['github']['name'],
+        'github_email': "foo@example.org",
         'repo_ids': [(0, 0, {
             'name': r2.name,
             'group_id': False,

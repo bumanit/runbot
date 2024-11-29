@@ -193,6 +193,8 @@ def test_massive_conflict(env, config, make_repo):
         'name': "thing",
         'github_token': config['github']['token'],
         'github_prefix': 'hansen',
+        'github_name': config['github']['name'],
+        'github_email': "foo@example.org",
         'fp_github_token': config['github']['token'],
         'fp_github_name': 'herbert',
         'branch_ids': [
@@ -357,6 +359,8 @@ def test_conflict_deleted_deep(env, config, make_repo):
         'name': "test",
         'github_token': config['github']['token'],
         'github_prefix': 'hansen',
+        'github_name': config['github']['name'],
+        'github_email': "foo@example.org",
         'fp_github_token': config['github']['token'],
         'fp_github_name': 'herbert',
         'branch_ids': [

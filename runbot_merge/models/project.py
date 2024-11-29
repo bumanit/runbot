@@ -6,7 +6,6 @@ import requests
 import sentry_sdk
 
 from odoo import models, fields, api
-from odoo.exceptions import UserError
 from odoo.osv import expression
 from odoo.tools import reverse_order
 
@@ -41,8 +40,8 @@ class Project(models.Model):
     )
 
     github_token = fields.Char("Github Token", required=True)
-    github_name = fields.Char(store=True, compute="_compute_identity")
-    github_email = fields.Char(store=True, compute="_compute_identity")
+    github_name = fields.Char(store=True, compute="_compute_identity", required=True, copy=True)
+    github_email = fields.Char(store=True, compute="_compute_identity", required=True, copy=True)
     github_prefix = fields.Char(
         required=True,
         default="hanson", # mergebot du bot du bot du~
@@ -74,11 +73,10 @@ class Project(models.Model):
             if not project.github_token or (project.github_name and project.github_email):
                 continue
 
-            r0 = s.get('https://api.github.com/user', headers={
-                'Authorization': 'token %s' % project.github_token
-            })
+            headers = {'Authorization': f'token {project.github_token}'}
+            r0 = s.get('https://api.github.com/user', headers=headers)
             if not r0.ok:
-                _logger.error("Failed to fetch merge bot information for project %s: %s", project.name, r0.text or r0.content)
+                _logger.warning("Failed to fetch merge bot information for project %s: %s", project.name, r0.text or r0.content)
                 continue
 
             r = r0.json()
@@ -88,20 +86,17 @@ class Project(models.Model):
                 continue
 
             if 'user:email' not in set(re.split(r',\s*', r0.headers['x-oauth-scopes'])):
-                raise UserError("The merge bot github token needs the user:email scope to fetch the bot's identity.")
-            r1 = s.get('https://api.github.com/user/emails', headers={
-                'Authorization': 'token %s' % project.github_token
-            })
+                _logger.warning("Unable to fetch merge bot emails for project %s: scope missing from token", project.name)
+            r1 = s.get('https://api.github.com/user/emails', headers=headers)
             if not r1.ok:
-                _logger.error("Failed to fetch merge bot emails for project %s: %s", project.name, r1.text or r1.content)
+                _logger.warning("Failed to fetch merge bot emails for project %s: %s", project.name, r1.text or r1.content)
                 continue
+
             project.github_email = next((
                 entry['email']
                 for entry in r1.json()
                 if entry['primary']
             ), None)
-            if not project.github_email:
-                raise UserError("The merge bot needs a public or accessible primary email set up.")
 
     # technically the email could change at any moment...
     @api.depends('fp_github_token')

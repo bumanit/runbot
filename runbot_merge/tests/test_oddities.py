@@ -37,6 +37,8 @@ def test_name_search(env):
     p = env['runbot_merge.project'].create({
         'name': 'proj',
         'github_token': 'no',
+        'github_name': "noo",
+        'github_email': "nooo@example.org",
     })
     b = env['runbot_merge.branch'].create({
         'name': 'target',

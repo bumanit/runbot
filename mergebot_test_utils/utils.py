@@ -122,6 +122,8 @@ def make_basic(
             'name': project_name,
             'github_token': config['github']['token'],
             'github_prefix': 'hansen',
+            'github_name': config['github']['name'],
+            'github_email': "foo@example.org",
             'fp_github_token': fp_token and config['github']['token'],
             'fp_github_name': 'herbert',
             'branch_ids': [

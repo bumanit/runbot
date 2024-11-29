@@ -543,6 +543,8 @@ def post_merge(env, config, users, make_repo, branches):
         'name': prod.name,
         'github_token': config['github']['token'],
         'github_prefix': 'hansen',
+        'github_name': config['github']['name'],
+        'github_email': "foo@example.org",
         'fp_github_token': config['github']['token'],
         'fp_github_name': 'herbert',
         'branch_ids': [
