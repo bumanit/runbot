@@ -160,6 +160,10 @@ class ConfigStep(models.Model):
     extra_params = fields.Char('Extra cmd args', tracking=True)
     additionnal_env = fields.Char('Extra env', help='Example: foo="bar";bar="foo". Cannot contains \' ', tracking=True)
     enable_log_db = fields.Boolean("Enable log db", default=True)
+    demo_mode = fields.Selection(
+        [('default', 'Default'), ('without_demo', 'Without Demo'), ('with_demo', 'With Demo')],
+        "Install demo data", default='default', tracking=True
+    )
     # python
     python_code = fields.Text('Python code', tracking=True, default=PYTHON_DEFAULT)
     python_result_code = fields.Text('Python code for result', tracking=True, default=PYTHON_DEFAULT)
@@ -431,13 +435,24 @@ class ConfigStep(models.Model):
         if self.create_db:
             build._local_pg_createdb(db_name)
         cmd += ['-d', db_name]
+
+        # Demo data behavior changed in 18.1 -> demo data became opt-in instead of opt-out
+        available_options = build._parse_config()
+        build_default_demo_behavior = 'without_demo' if '--with-demo' in available_options else 'with_demo'
+        demo_mode = build.params_id.config_data.get('demo_mode', self.demo_mode)
+        wanted_demo_behavior = build_default_demo_behavior if demo_mode == 'default' else demo_mode
+        if wanted_demo_behavior != build_default_demo_behavior:
+            if wanted_demo_behavior == 'with_demo':
+                cmd.append('--with-demo')
+            else:
+                cmd.append('--without-demo=true')
+
         # list module to install
         extra_params = build.params_id.extra_params or self.extra_params or ''
         if mods and '-i' not in extra_params:
             cmd += ['-i', mods]
         config_path = build._server("tools/config.py")
 
-        available_options = build._parse_config()
         if self.test_enable:
             if "--test-enable" in available_options:
                 cmd.extend(['--test-enable'])
@@ -768,6 +783,16 @@ class ConfigStep(models.Model):
         upgrade_paths = list(build._get_upgrade_path())
         if upgrade_paths:
             migrate_cmd += ['--upgrade-path', ','.join(upgrade_paths)]
+        # Demo data behavior changed in 18.1 -> demo data became opt-in instead of opt-out
+        available_options = build._parse_config()
+        build_default_demo_behavior = 'with_demo' if '--with_demo' in available_options else 'without_demo'
+        demo_mode = build.params_id.config_data.get('demo_mode', self.demo_mode)
+        wanted_demo_behavior = build_default_demo_behavior if demo_mode == 'default' else demo_mode
+        if wanted_demo_behavior != build_default_demo_behavior:
+            if wanted_demo_behavior == 'with_demo':
+                migrate_cmd.append('--with-demo')
+            else:
+                migrate_cmd.append('--without-demo=true')
 
         build._log('run', 'Start migration build %s' % build.dest)
 
