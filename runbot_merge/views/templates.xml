@@ -26,9 +26,9 @@
         <div class="dropdown" t-if="staging.heads">
             <button class="btn btn-link dropdown-toggle"
                     type="button"
-                    data-toggle="dropdown"
                     aria-haspopup="true"
-                    aria-expanded="true"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
                     t-attf-title="Staged at {{staging.staged_at}}Z for {{round(staging.staging_duration)}}s"
             >
                 <t t-out="0"/>
@@ -286,9 +286,9 @@
                                         <li class="dropdown" t-if="first_pr">
                                             <button class="btn btn-link dropdown-toggle"
                                                     type="button"
-                                                    data-toggle="dropdown"
                                                     aria-haspopup="true"
-                                                    aria-expanded="true"
+                                                    data-bs-toggle="dropdown"
+                                                    aria-expanded="false"
                                             >
                                                 <t t-esc="first_pr.label"/>
                                                 <span class="caret"></span>
