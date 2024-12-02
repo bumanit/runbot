@@ -1,6 +1,7 @@
 import json
 
-from utils import Commit, make_basic
+from utils import Commit, make_basic, to_pr
+
 
 def statuses(pr):
     return {
@@ -25,7 +26,7 @@ def test_override_inherited(env, config, make_repo, users):
         pr.post_comment('hansen r+ override=default', config['role_reviewer']['token'])
     env.run_crons()
 
-    original = env['runbot_merge.pull_requests'].search([('repository.name', '=', repo.name), ('number', '=', pr.number)])
+    original = to_pr(env, pr)
     assert original.state == 'ready'
     assert not original.limit_id
 
@@ -93,7 +94,7 @@ def test_override_combination(env, config, make_repo, users):
         pr.post_comment('hansen r+ override=ci/runbot', config['role_reviewer']['token'])
     env.run_crons()
 
-    pr0_id = env['runbot_merge.pull_requests'].search([('repository.name', '=', repo.name), ('number', '=', pr.number)])
+    pr0_id = to_pr(env, pr)
     assert pr0_id.state == 'ready'
     assert statuses(pr0_id) == {'ci/runbot': 'success', 'legal/cla': 'success'}
 

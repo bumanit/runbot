@@ -1,6 +1,7 @@
 import pytest
 
-from utils import Commit
+from utils import Commit, to_pr
+
 
 @pytest.fixture
 def _setup_statuses(project, repo):
@@ -26,10 +27,7 @@ def test_status_applies(env, repo, config):
 
         [c] = repo.make_commits(m, Commit('pr', tree={'a': '2'}), ref='heads/change')
         pr = repo.make_pr(target='master', title="super change", head='change')
-    pr_id = env['runbot_merge.pull_requests'].search([
-        ('repository.name', '=', repo.name),
-        ('number', '=', pr.number)
-    ])
+    pr_id = to_pr(env, pr)
     assert pr_id.state == 'opened'
 
     with repo:
@@ -76,10 +74,7 @@ def test_status_skipped(env, project, repo, config):
 
         [c] = repo.make_commits(m, Commit('pr', tree={'a': '2'}), ref='heads/change')
         pr = repo.make_pr(target='maintenance', title="super change", head='change')
-    pr_id = env['runbot_merge.pull_requests'].search([
-        ('repository.name', '=', repo.name),
-        ('number', '=', pr.number)
-    ])
+    pr_id = to_pr(env, pr)
     assert pr_id.state == 'opened'
 
     with repo:
@@ -140,10 +135,7 @@ def test_pseudo_version_tag(env, project, make_repo, setreviewers, config):
         repo.post_status(pr.ref, 'success', 'ci')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons() # should create staging
-    pr_id = env['runbot_merge.pull_requests'].search([
-        ('repository.name', '=', repo.name),
-        ('number', '=', pr.number)
-    ])
+    pr_id = to_pr(env, pr)
     assert pr_id.state == 'ready'
     assert pr_id.staging_id
     with repo:
@@ -160,10 +152,7 @@ def test_pseudo_version_tag(env, project, make_repo, setreviewers, config):
         repo.post_status(pr.ref, 'success', 'ci')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons() # should create staging
-    pr_id = env['runbot_merge.pull_requests'].search([
-        ('repository.name', '=', repo.name),
-        ('number', '=', pr.number)
-    ])
+    pr_id = to_pr(env, pr)
     assert pr_id.state == 'ready', pr.comments
     assert pr_id.staging_id
     with repo:

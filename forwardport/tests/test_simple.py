@@ -55,10 +55,7 @@ def test_straightforward_flow(env, config, make_repo, users):
         # use rebase-ff (instead of rebase-merge) so we don't have to dig in
         # parents of the merge commit to find the cherrypicks
         pr.post_comment('hansen r+ rebase-ff', config['role_reviewer']['token'])
-    pr_id = env['runbot_merge.pull_requests'].search([
-        ('repository.name', '=', prod.name),
-        ('number', '=', pr.number),
-    ])
+    pr_id = to_pr(env, pr)
     assert not pr_id.merge_date,\
         "PR obviously shouldn't have a merge date before being merged"
 
@@ -1086,10 +1083,7 @@ class TestBranchDeletion:
             prod.post_status('staging.a', 'success', 'ci/runbot')
         env.run_crons()
 
-        pr_id = env['runbot_merge.pull_requests'].search([
-            ('repository.name', '=', prod.name),
-            ('number', '=', pr.number)
-        ])
+        pr_id = to_pr(env, pr)
         assert pr_id.state == 'merged'
         removers = env['forwardport.branch_remover'].search([])
         to_delete_branch = removers.mapped('pr_id')
@@ -1160,10 +1154,7 @@ class TestRecognizeCommands:
             r.make_commits('c', Commit('p', tree={'x': '0'}), ref='heads/testbranch')
             pr = r.make_pr(target='a', head='testbranch')
 
-        return r, pr, env['runbot_merge.pull_requests'].search([
-            ('repository.name', '=', r.name),
-            ('number', '=', pr.number),
-        ])
+        return r, pr, to_pr(env, pr)
 
     # FIXME: remove / merge into mergebot tests
     def test_botname_casing(self, env, config, make_repo):

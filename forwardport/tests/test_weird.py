@@ -278,7 +278,7 @@ class TestNotAllBranches:
             pr = a.make_pr(target='a', title="a pr", head=a_dev.owner + ':change')
             a.post_status(c, 'success', 'ci/runbot')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
-        p = env['runbot_merge.pull_requests'].search([('repository.name', '=', a.name), ('number', '=', pr.number)])
+        p = to_pr(env, pr)
         env.run_crons()
         assert p.staging_id
         with a, b:
@@ -371,14 +371,8 @@ class TestNotAllBranches:
                 repo.post_status('staging.a', 'success', 'ci/runbot')
         env.run_crons()
 
-        pr_a_id = env['runbot_merge.pull_requests'].search([
-            ('repository.name', '=', a.name),
-            ('number', '=', pr_a.number),
-        ])
-        pr_b_id = env['runbot_merge.pull_requests'].search([
-            ('repository.name', '=', b.name),
-            ('number', '=', pr_b.number)
-        ])
+        pr_a_id = to_pr(env, pr_a)
+        pr_b_id = to_pr(env, pr_b)
         assert pr_a_id.state == pr_b_id.state == 'merged'
         assert env['runbot_merge.pull_requests'].search([]) == pr_a_id | pr_b_id
         # should have refused to create a forward port because the PRs have
@@ -645,10 +639,7 @@ def test_skip_ci_all(env, config, make_repo):
         pr.post_comment('hansen fw=skipci', config['role_reviewer']['token'])
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
-    assert env['runbot_merge.pull_requests'].search([
-        ('repository.name', '=', prod.name),
-        ('number', '=', pr.number)
-    ]).batch_id.fw_policy == 'skipci'
+    assert to_pr(env, pr).batch_id.fw_policy == 'skipci'
 
     with prod:
         prod.post_status('staging.a', 'success', 'legal/cla')

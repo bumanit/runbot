@@ -111,10 +111,9 @@ def test_new_pr_no_branch(env, project, repo, users):
         pr = repo.make_pr(title="title", body='body', target='other', head=c)
     env.run_crons()
 
-    assert not env['runbot_merge.pull_requests'].search([
-        ('repository', '=', project.repo_ids.id),
-        ('number', '=', pr.number),
-    ]), "the PR should not have been created in the backend"
+    # the PR should not have been created in the backend
+    with pytest.raises(TimeoutError):
+        to_pr(env, pr, attempts=1)
     assert pr.comments == [
         (users['user'], "This PR targets the un-managed branch %s:other, it needs to be retargeted before it can be merged." % repo.name),
     ]
