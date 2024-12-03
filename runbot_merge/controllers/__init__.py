@@ -334,16 +334,17 @@ def handle_pr(env, event):
         return 'Ignored: could not lock rows (probably being merged)'
 
     if event['action'] == 'reopened' :
-        if pr_obj.state == 'merged':
-            feedback(
-                close=True,
-                message=env.ref('runbot_merge.handle.pr.merged')._format(event=event),
-            )
+        if pr_obj.merge_date:
+            if pr_obj.state == 'merged':
+                message = env.ref('runbot_merge.handle.pr.merged')._format(event=event)
+            else:
+                message = env.ref('runbot_merge.handle.pr.mergedbatch')._format(event=event)
+            feedback(close=True, message=message)
         elif pr_obj.closed:
             _logger.info('%s reopening %s', event['sender']['login'], pr_obj.display_name)
             pr_obj.write({
                 'closed': False,
-                # updating the head triggers a revalidation
+                # updating the head triggers a revalidation, and unstages the batch
                 'head': pr['head']['sha'],
                 'squash': pr['commits'] == 1,
             })

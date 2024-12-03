@@ -11,14 +11,17 @@ branch: branch (ref) name
 event: complete pr event"
 runbot_merge.handle.pr.merged,@{event[sender][login]} ya silly goose you can't reopen a merged PR.,"Notifies that a user tried to reopen a merged PR.
 
-Event: complete PR event"
+event: complete PR event"
+runbot_merge.handle.pr.mergedbatch,"Reopening a PR in a merged batch is not allowed, create a new PR.","Notifies that a user tried to reopen a closed PR whose batch is merged.
+
+event: complete PR event"
 runbot_merge.pr.load.unmanaged,"Branch `{pr[base][ref]}` is not within my remit, imma just ignore it.","Notifies that a user tried to load a PR targeting a non-handled branch.
 
 pr: pull request (github object)
 Repository: repository object (???)"
 runbot_merge.pr.load.fetched,"{ping}I didn't know about this PR and had to retrieve its information, you may have to re-approve it as I didn't see previous commands.","Notifies that we did retrieve an unknown PR (either by request or as side effect of an interaction).
 
-Pr: pr object we just created"
+pr: pr object we just created"
 runbot_merge.pr.branch.disabled,"{pr.ping}the target branch {pr.target.name!r} has been disabled, you may want to close this PR.","Notifies that the target branch for this PR was deactivated.
 
 pr: pull request in question"

@@ -3,7 +3,7 @@ without wider relevance and thus other location.
 """
 import pytest
 
-from utils import Commit, to_pr, pr_page
+from utils import Commit, to_pr, pr_page, seen
 
 
 def test_close_single(env, repo):
@@ -199,3 +199,110 @@ Inconsistent targets:
     env.run_crons()
 
     assert env['runbot_merge.stagings'].search_count([])
+
+def test_reopen_pr_in_staged_batch(env, project, make_repo2, config):
+    """Reopening a closed PR from a staged batch should cancel the staging
+    """
+    repo1 = make_repo2('a')
+    repo2 = make_repo2('b')
+
+    with repo1:
+        [m1, _] = repo1.make_commits(
+            None,
+            Commit('a', tree={'a': 'a'}),
+            Commit('b', tree={'b': 'b'}),
+            ref='heads/p',
+        )
+        repo1.make_ref('heads/master', m1)
+        pr1 = repo1.make_pr(target='master', head='p')
+    with repo2:
+        [m2, _] = repo2.make_commits(
+            None,
+            Commit('a', tree={'a': 'a'}),
+            Commit('b', tree={'b': 'b'}),
+            ref='heads/p',
+        )
+        repo2.make_ref('heads/master', m2)
+        pr2 = repo2.make_pr(target='master', head='p')
+
+    pr1_id = to_pr(env, pr1)
+    pr2_id = to_pr(env, pr2)
+    batch_id = pr1_id.batch_id
+    assert batch_id
+    assert batch_id == pr2_id.batch_id
+
+    with repo1:
+        repo1.post_status(pr1.head, 'success')
+        pr1.post_comment("hansen r+", config['role_reviewer']['token'])
+    with repo2:
+        pr2.close()
+
+    env.run_crons(None)
+
+    assert pr2_id.state == 'closed'
+    assert batch_id.staging_ids.filtered(lambda s: s.active)
+
+    with repo2:
+        pr2.open()
+    assert pr2_id.state == 'opened'
+    assert not batch_id.staging_ids.filtered(lambda s: s.active)
+    assert batch_id.blocked
+
+def test_reopen_pr_in_merged_batch(env, project, make_repo2, config, users):
+    """If the batch is merged, the pr should just be re-closed with a message
+    """
+    repo1 = make_repo2('a')
+    repo2 = make_repo2('b')
+
+    with repo1:
+        [m1, _] = repo1.make_commits(
+            None,
+            Commit('a', tree={'a': 'a'}),
+            Commit('b', tree={'b': 'b'}),
+            ref='heads/p',
+        )
+        repo1.make_ref('heads/master', m1)
+        pr1 = repo1.make_pr(target='master', head='p')
+    with repo2:
+        [m2, _] = repo2.make_commits(
+            None,
+            Commit('a', tree={'a': 'a'}),
+            Commit('b', tree={'b': 'b'}),
+            ref='heads/p',
+        )
+        repo2.make_ref('heads/master', m2)
+        pr2 = repo2.make_pr(target='master', head='p')
+
+    pr1_id = to_pr(env, pr1)
+    pr2_id = to_pr(env, pr2)
+    batch_id = pr1_id.batch_id
+    assert batch_id
+    assert batch_id == pr2_id.batch_id
+
+    with repo1:
+        repo1.post_status(pr1.head, 'success')
+        pr1.post_comment("hansen r+", config['role_reviewer']['token'])
+    with repo2:
+        pr2.close()
+
+    env.run_crons(None)
+
+    with repo1, repo2:
+        repo1.post_status('staging.master', 'success')
+        repo2.post_status('staging.master', 'success')
+    env.run_crons(None)
+
+
+    assert pr1_id.state == 'merged'
+    assert pr2_id.state == 'closed'
+
+    with repo2:
+        pr2.open()
+    env.run_crons(None)
+
+    assert pr2_id.closed
+    assert pr2_id.state == 'closed'
+    assert pr2.comments == [
+        seen(env, pr2, users),
+        (users['user'], 'Reopening a PR in a merged batch is not allowed, create a new PR.'),
+    ]
