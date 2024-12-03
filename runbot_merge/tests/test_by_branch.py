@@ -28,19 +28,12 @@ def test_status_applies(env, repo, config):
         [c] = repo.make_commits(m, Commit('pr', tree={'a': '2'}), ref='heads/change')
         pr = repo.make_pr(target='master', title="super change", head='change')
     pr_id = to_pr(env, pr)
-    assert pr_id.state == 'opened'
 
-    with repo:
-        repo.post_status(c, 'success', 'ci')
-    env.run_crons(None)
-    assert pr_id.state == 'opened'
-    with repo:
-        repo.post_status(c, 'success', 'pr')
-    env.run_crons(None)
-    assert pr_id.state == 'opened'
-    with repo:
-        repo.post_status(c, 'success', 'lint')
-    env.run_crons(None)
+    for context in ['ci', 'pr', 'lint']:
+        assert pr_id.state == 'opened'
+        with repo:
+            repo.post_status(c, 'success', context)
+        env.run_crons(None)
     assert pr_id.state == 'validated'
 
     with repo:
@@ -48,18 +41,11 @@ def test_status_applies(env, repo, config):
     env.run_crons()
 
     st = env['runbot_merge.stagings'].search([])
-    assert st.state == 'pending'
-    with repo:
-        repo.post_status('staging.master', 'success', 'ci')
-    env.run_crons(None)
-    assert st.state == 'pending'
-    with repo:
-        repo.post_status('staging.master', 'success', 'lint')
-    env.run_crons(None)
-    assert st.state == 'pending'
-    with repo:
-        repo.post_status('staging.master', 'success', 'staging')
-    env.run_crons(None)
+    for context in ['ci', 'lint', 'staging']:
+        assert st.state == 'pending'
+        with repo:
+            repo.post_status('staging.master', 'success', context)
+        env.run_crons(None)
     assert st.state == 'success'
 
 @pytest.mark.usefixtures('_setup_statuses')
@@ -75,15 +61,12 @@ def test_status_skipped(env, project, repo, config):
         [c] = repo.make_commits(m, Commit('pr', tree={'a': '2'}), ref='heads/change')
         pr = repo.make_pr(target='maintenance', title="super change", head='change')
     pr_id = to_pr(env, pr)
-    assert pr_id.state == 'opened'
 
-    with repo:
-        repo.post_status(c, 'success', 'ci')
-    env.run_crons(None)
-    assert pr_id.state == 'opened'
-    with repo:
-        repo.post_status(c, 'success', 'pr')
-    env.run_crons(None)
+    for context in ['ci', 'pr']:
+        assert pr_id.state == 'opened'
+        with repo:
+            repo.post_status(c, 'success', context)
+        env.run_crons(None)
     assert pr_id.state == 'validated'
 
     with repo:
@@ -91,14 +74,11 @@ def test_status_skipped(env, project, repo, config):
     env.run_crons()
 
     st = env['runbot_merge.stagings'].search([])
-    assert st.state == 'pending'
-    with repo:
-        repo.post_status('staging.maintenance', 'success', 'staging')
-    env.run_crons(None)
-    assert st.state == 'pending'
-    with repo:
-        repo.post_status('staging.maintenance', 'success', 'ci')
-    env.run_crons(None)
+    for context in ['staging', 'ci']:
+        assert st.state == 'pending'
+        with repo:
+            repo.post_status('staging.maintenance', 'success', context)
+        env.run_crons(None)
     assert st.state == 'success'
 
 def test_pseudo_version_tag(env, project, make_repo, setreviewers, config):
