@@ -681,6 +681,28 @@ class ErrorQualifyRegex(models.Model):
 
     test_ids = fields.One2many('runbot.error.qualify.test', 'qualify_regex_id', string="Test Sample", help="Error samples to test qualifying regex")
 
+    def action_generate_fields(self):
+        for rec in self:
+            for field in list(re.compile(rec.regex).groupindex.keys()):
+                existing = self.env['ir.model.fields'].search([('model', '=', 'runbot.build.error.content'), ('name', '=', f'x_{field}')])
+                if existing:
+                    _logger.info(f"Field x_%s already exists", field)
+                else:
+                    _logger.info(f"Creating field x_%s", field)
+                    self.env['ir.model.fields'].create({
+                        'model_id': self.env['ir.model']._get('runbot.build.error.content').id,
+                        'name': f'x_{field}',
+                        'field_description': ' '.join(field.capitalize().split('_')),
+                        'ttype': 'char',
+                        'required': False,
+                        'readonly': True,
+                        'store': True,
+                        'depends': 'qualifiers',
+                        'compute': f"""
+for error_content in self:
+    error_content['x_{field}'] = error_content.qualifiers.get('{field}', '')""",
+                    })
+
     @api.constrains('regex')
     def _validate(self):
         for rec in self:
