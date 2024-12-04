@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import hashlib
+import json
 import logging
 import re
 
@@ -686,9 +687,9 @@ class ErrorQualifyRegex(models.Model):
             for field in list(re.compile(rec.regex).groupindex.keys()):
                 existing = self.env['ir.model.fields'].search([('model', '=', 'runbot.build.error.content'), ('name', '=', f'x_{field}')])
                 if existing:
-                    _logger.info(f"Field x_%s already exists", field)
+                    _logger.info("Field x_%s already exists", field)
                 else:
-                    _logger.info(f"Creating field x_%s", field)
+                    _logger.info("Creating field x_%s", field)
                     self.env['ir.model.fields'].create({
                         'model_id': self.env['ir.model']._get('runbot.build.error.content').id,
                         'name': f'x_{field}',
