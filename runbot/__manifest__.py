@@ -36,6 +36,11 @@
         'templates/git.xml',
         'templates/nginx.xml',
         'templates/build_error.xml',
+        'templates/new/page.xml',
+        'templates/new/bundle.xml',
+        'templates/new/batch.xml',
+        'templates/new/build.xml',
+        'templates/new/slot.xml',
 
         'views/branch_views.xml',
         'views/build_error_views.xml',
@@ -64,6 +69,16 @@
         'web.assets_backend': [
             'runbot/static/src/libs/diff_match_patch/diff_match_patch.js',
             'runbot/static/src/js/fields/*',
+        ],
+        'runbot.assets_frontend_new': [
+            # TODO: compile bootstrap scss from /web without reviews and copy custom_utilities.scss
+            '/runbot/static/src/libs/bootstrap/css/bootstrap.css',
+            '/runbot/static/src/libs/fontawesome/css/font-awesome.css',
+            '/runbot/static/src/css/runbot.scss',# TODO: Check what is necessary from here
+            '/runbot/static/src/libs/jquery/jquery.js',
+            '/runbot/static/src/libs/popper/popper.js',
+            '/runbot/static/src/libs/bootstrap/js/bootstrap.bundle.js',
+            '/runbot/static/src/js/runbot.js',
         ],
         'runbot.assets_frontend': [
             '/web/static/lib/bootstrap/dist/css/bootstrap.css',

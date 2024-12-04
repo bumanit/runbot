@@ -37,3 +37,40 @@ function copyToClipboard(text) {
     }
     navigator.clipboard.writeText(text);
 }
+
+const copyHashToClipboard = (hash) => {
+    if (!navigator.clipboard) {
+        return
+    }
+    navigator.clipboard.writeText(location.origin + location.pathname + `#${hash}`);
+}
+
+const switchTheme = (theme) => {
+    document.documentElement.dataset.bsTheme = theme;
+}
+
+// setInterval(() => {
+//     if (document.documentElement.dataset.bsTheme === 'dark') {
+//         switchTheme('light');
+//     } else {
+//         switchTheme('dark');
+//     }
+// }, 2000)
+
+const dark = switchTheme.bind(null, 'dark');
+const legacy = switchTheme.bind(null, 'legacy');
+const light = switchTheme.bind(null, 'light');
+const red404 = switchTheme.bind(null, 'red404');
+
+setTimeout(() => {
+    const navbarElem = document.querySelector('nav.navbar');
+    const toolbarElem = document.querySelector('.o_runbot_toolbar.position-sticky');
+
+    if (navbarElem && toolbarElem) {
+        toolbarElem.style.top = navbarElem.getBoundingClientRect().height;
+        new ResizeObserver(() => {
+            console.log('resize')
+            toolbarElem.style.top = navbarElem.getBoundingClientRect().height;
+        }).observe(navbarElem);
+    }
+}, 150);

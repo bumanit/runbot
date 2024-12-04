@@ -15,7 +15,7 @@
                 ])"/>
                 <div t-if="outstanding != 0" class="alert col-md-12 alert-warning mb-0">
                     <a href="/forwardport/outstanding">
-                        <t t-esc="outstanding"/> outstanding forward-ports (>1 week)
+                        <t t-out="outstanding"/> outstanding forward-ports (>1 week)
                     </a>
                 </div>
             </t>

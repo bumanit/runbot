@@ -8,22 +8,22 @@
             <div class="row g-0">
               <div class="col-md-4">
                 <div class="bg-success-subtle">
-                  <b>Build: </b><a t-attf-href="/runbot/build/{{build.id}}"><t t-esc="build.id"/></a><br/>
+                  <b>Build: </b><a t-attf-href="/runbot/build/{{build.id}}"><t t-out="build.id"/></a><br/>
                   <t t-if="build.description">
                     <b>Description:</b>
                     <t t-out="build.md_description"/>
                     <br/>
                   </t>
-                  <b>Date: </b><t t-esc="build.create_date" /><br/>
-                  <b>Config: </b><t t-esc="build.params_id.config_id.name" /><br/>
+                  <b>Date: </b><t t-out="build.create_date" /><br/>
+                  <b>Config: </b><t t-out="build.params_id.config_id.name" /><br/>
                   <b>Bundle(s): </b>
                   <t t-foreach="bundles" t-as="bundle">
-                    <a t-attf-href="/runbot/bundle/{{bundle.id}}"><t t-esc="bundle.name" /></a>
+                    <a t-attf-href="/runbot/bundle/{{bundle.id}}"><t t-out="bundle.name" /></a>
                   </t><br/>
                   <t t-foreach="build.params_id.sudo().commit_link_ids" t-as="build_commit">
                     <b>Commit:</b>
                     <a t-attf-href="/runbot/commit/{{build_commit.commit_id.id}}">
-                      <t t-esc="build_commit.commit_id.dname"/>
+                      <t t-out="build_commit.commit_id.dname"/>
                     </a>
                     <a t-att-href="'https://%s/commit/%s' % (build_commit.branch_id.remote_id.base_url, build_commit.commit_id.name)" class="btn btn-sm text-start" title="View Commit on Github"><i class="fa fa-github"/></a>
                     <t t-if="build_commit.match_type in ('default', 'pr_target', 'prefix') ">
@@ -32,27 +32,27 @@
                     </t>
                     <div t-else="" class="ms-3">
                       <b>Subject:</b>
-                      <t t-esc="build_commit.commit_id.subject"/>
+                      <t t-out="build_commit.commit_id.subject"/>
                       <br/>
                       <b>Author:</b>
-                      <t t-esc="build_commit.commit_id.author"/>
+                      <t t-out="build_commit.commit_id.author"/>
                       <br/>
                       <b>Committer:</b>
-                      <t t-esc="build_commit.commit_id.committer"/>
+                      <t t-out="build_commit.commit_id.committer"/>
                       <br/>
                     </div>
                   </t>
                   <b>Version:</b>
-                  <t t-esc="build.params_id.version_id.name"/>
+                  <t t-out="build.params_id.version_id.name"/>
                   <br/>
                 </div>
               </div>
               <div t-foreach="sorted(build_stats.keys())" t-as="category" class="col-md-4">
-                <h3><t t-esc="category.title().replace('_', ' ')"/></h3>
+                <h3><t t-out="category.title().replace('_', ' ')"/></h3>
                 <table class="table table-condensed table-responsive table-stripped">
                   <tr t-foreach="build_stats[category].keys()" t-as="module">
-                    <td><t t-esc="module"/></td>
-                    <td><t t-esc="build_stats[category][module]"/></td>
+                    <td><t t-out="module"/></td>
+                    <td><t t-out="build_stats[category][module]"/></td>
                   </tr>
                 </table>
               </div>
@@ -69,11 +69,11 @@
         <div class="container-fluid">
           <nav class="navbar navbar-light">
             <div class="container">
-              <b>Bundle:</b><t t-esc="bundle.name"/>
-              <b>Trigger:</b><t t-esc="trigger.name"/>
+              <b>Bundle:</b><t t-out="bundle.name"/>
+              <b>Trigger:</b><t t-out="trigger.name"/>
               <b>Stat Category:</b>
               <select id="key_category_selector" class="form-select" aria-label="Stat Category">
-                <option t-foreach="stats_categories" t-as="category" t-attf-value="{{category}}"><t t-esc="category.replace('_',' ').title()"/></option>
+                <option t-foreach="stats_categories" t-as="category" t-attf-value="{{category}}"><t t-out="category.replace('_',' ').title()"/></option>
               </select>
               <b>Nb of builds:</b>
               <select id="limit_selector" class="form-select" aria-label="Number Of Builds">
