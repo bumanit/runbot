@@ -433,8 +433,6 @@
         <field name="model">runbot.error.qualify.regex</field>
         <field name="arch" type="xml">
             <tree string="Qualifying Regexes">
-                <header>
-                </header>
                 <field name="sequence" widget="handle"/>
                 <field name="regex" readonly="1"/>
                 <field name="source_field" readonly="1"/>
@@ -447,6 +445,9 @@
         <field name="model">runbot.error.qualify.regex</field>
         <field name="arch" type="xml">
           <form>
+            <header>
+              <button type="object" name="action_generate_fields" string="Create corresponding fields"/>
+            </header>
             <div class="alert alert-info" role="alert">
               The regular expresion must have at least one named group pattern e.g: <code>'(?P&lt;module&gt;\w+)'</code>
             </div>
