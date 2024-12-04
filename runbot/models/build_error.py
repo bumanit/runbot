@@ -744,7 +744,7 @@ class QualifyErrorTest(models.Model):
     result = JsonDictField('Result', compute='_compute_result')
     is_matching = fields.Boolean(compute='_compute_result', default=False)
 
-    @api.depends('qualify_regex_id', 'error_content_id')
+    @api.depends('qualify_regex_id.regex', 'error_content_id', 'expected_result', 'result')
     def _compute_result(self):
         for record in self:
             record.result = record.qualify_regex_id._qualify(record.build_error_content)
