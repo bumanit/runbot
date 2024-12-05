@@ -24,24 +24,24 @@
     </record>
 
     <record id="view_codeowner_tree" model="ir.ui.view">
-        <field name="name">runbot.codeowner.tree</field>
+        <field name="name">runbot.codeowner.list</field>
         <field name="model">runbot.codeowner</field>
         <field name="arch" type="xml">
-            <tree string="Codeowners">
+            <list string="Codeowners">
                 <field name="project_id"/>
                 <field name="version_domain"/>
                 <field name="regex"/>
                 <field name="organisation" invisible="1"/>
                 <field name="team_id"/>
                 <field name="github_teams" widget="github_team"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <record id="open_view_codeowner_tree" model="ir.actions.act_window">
         <field name="name">Codeowner</field>
         <field name="res_model">runbot.codeowner</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
   </data>

@@ -235,7 +235,7 @@ class BuildError(models.Model):
     def action_view_errors(self):
         return {
             'type': 'ir.actions.act_window',
-            'views': [(False, 'tree'), (False, 'form')],
+            'views': [(False, 'list'), (False, 'form')],
             'res_model': 'runbot.build.error.content',
             'domain': [('error_id', '=', self.id)],
             'context': {'active_test': False},
@@ -311,7 +311,7 @@ class BuildError(models.Model):
             window_action = {
                 "type": "ir.actions.act_window",
                 "res_model": "runbot.build.error",
-                "views": [[False, "tree"]],
+                "views": [[False, "list"]],
                 "domain": [('id', 'in', build_error_contents.ids)]
             }
             if len(build_error_contents) == 1:
@@ -576,7 +576,7 @@ class BuildErrorContent(models.Model):
             "domain": [('id', 'in', duplicate_ids)],
             "context": {"create": False, 'group_by': ['fingerprint']},
             "name": "Duplicate Error contents",
-            'view_mode': 'tree,form'
+            'view_mode': 'list,form'
         }
 
     def action_qualify(self):

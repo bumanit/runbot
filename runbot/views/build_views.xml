@@ -23,10 +23,10 @@
                     <notebook>
                         <page string="Commits">
                             <field name="commit_link_ids">
-                                <tree>
+                                <list>
                                     <field name="commit_id"/>
                                     <field name="match_type"/>
-                                </tree>
+                                </list>
                             </field>
                         </page>
                         <page string="Builds">
@@ -43,11 +43,11 @@
     <record id="view_build_params_tree" model="ir.ui.view">
         <field name="model">runbot.build.params</field>
         <field name="arch" type="xml">
-            <tree string="Build params">
+            <list string="Build params">
                 <field name="config_id"/>
                 <field name="version_id"/>
                 <field name="commit_link_ids"/>
-            </tree>
+            </list>
         </field>
     </record>
     <record id="build_form" model="ir.ui.view">
@@ -90,7 +90,7 @@
     <record id="view_build_tree" model="ir.ui.view">
         <field name="model">runbot.build</field>
         <field name="arch" type="xml">
-            <tree string="Builds">
+            <list string="Builds">
                 <field name="dest"/>
                 <field name="global_state"/>
                 <field name="global_result"/>
@@ -98,7 +98,7 @@
                 <field name="host"/>
                 <field name="build_time"/>
                 <field name="build_age"/>
-            </tree>
+            </list>
         </field>
     </record>
     <record id="view_build_pivot" model="ir.ui.view">
@@ -137,13 +137,13 @@
         <field name="name">Builds</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">runbot.build</field>
-        <field name="view_mode">tree,form,graph,pivot</field>
+        <field name="view_mode">list,form,graph,pivot</field>
     </record>
     <record id="action_build_params" model="ir.actions.act_window">
         <field name="name">Builds Params</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">runbot.build.params</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
   </data>
 </odoo>

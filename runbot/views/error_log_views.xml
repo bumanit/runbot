@@ -39,10 +39,10 @@
     </record>
 
     <record id="runbot_error_log_tree_view" model="ir.ui.view">
-      <field name="name">Runbot Error Log tree view</field>
+      <field name="name">Runbot Error Log list view</field>
       <field name="model">runbot.error.log</field>
       <field name="arch" type="xml">
-        <tree string="Build Errors">
+        <list string="Build Errors">
           <button name="action_goto_build" type="object" icon="fa-external-link" title="View build"/>
           <field name="build_id"/>
           <field name="bundle_ids" widget="many2many_tags"/>
@@ -52,7 +52,7 @@
           <field name="path"/>
           <field name="summary"/>
           <field name="log_type"/>
-        </tree>
+        </list>
       </field>
     </record>
 
@@ -81,7 +81,7 @@
     <record id="open_view_error_log_tree" model="ir.actions.act_window">
         <field name="name">Error Logs</field>
         <field name="res_model">runbot.error.log</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
         <!-- <field name="context">{'search_default_sticky_bundles': True, 'search_default_failed_builds': True, 'time_ranges': {'field': 'log_create_date', 'range': 'last_7_days'},}</field> -->
         <field name="context">{'search_default_sticky_bundles': True, 'search_default_failed_builds': True, 'search_default_log_date': True}</field>
     </record>

@@ -50,11 +50,11 @@
                 </group>
                 <group string="Module filters">
                   <field name="module_filters" nolabel="1" colspan="4">
-                    <tree string="Module filters" editable="bottom">
+                    <list string="Module filters" editable="bottom">
                       <field name="repo_id"  domain="['|', ('id', 'in', parent.repo_ids), ('id', 'in', parent.dependency_ids)]"/>
                       <field name="modules"/>
                       <field name="description"/>
-                    </tree>
+                    </list>
                   </field>
                 </group>
                 <button class="btn btn-sm btn-primary" type="object" name="action_test_modules_filters" title="Test filters">List modules</button>
@@ -73,11 +73,11 @@
               </group>
               <group string="Managing Team (nightly failure, manual start, ...)"></group>
               <field name="team_ids">
-                <tree>
+                <list>
                   <field name="name"/>
                   <field name="github_team"/>
                   <field name="user_ids" widget="many2many_tags"/>
-                </tree>
+                </list>
               </field>
             </sheet>
             <div class="oe_chatter">
@@ -89,10 +89,10 @@
       </record>
 
       <record id="trigger_view_tree" model="ir.ui.view">
-        <field name="name">runbot.trigger.tree</field>
+        <field name="name">runbot.trigger.list</field>
         <field name="model">runbot.trigger</field>
         <field name="arch" type="xml">
-            <tree string="Repositories">
+            <list string="Repositories">
                 <field name="name"/>
                 <field name="category_id"/>
                 <field name="project_id"/>
@@ -102,7 +102,7 @@
                 <field name="dependency_ids" widget="many2many_tags"/>
                 <field name="starts_after_ids" widget="many2many_tags"/>
                 <field name="manual"/>
-            </tree>
+            </list>
         </field>
       </record>
     
@@ -122,13 +122,13 @@
       </record>
 
       <record id="repo_trigger_dependency_tree" model="ir.ui.view">
-        <field name="name">runbot.trigger.dependency.tree</field>
+        <field name="name">runbot.trigger.dependency.list</field>
         <field name="model">runbot.trigger.dependency</field>
         <field name="arch" type="xml">
-          <tree>
+          <list>
             <field name="dependency_id"/>
             <field name="dependant_id"/>
-          </tree>
+          </list>
         </field>
       </record>
 
@@ -173,14 +173,14 @@
                 </group>
                 <group colspan="4">
                   <field name="remote_ids">
-                    <tree string="Remotes" editable="bottom">
+                    <list string="Remotes" editable="bottom">
                       <field name="name"/>
                       <field name="sequence"/>
                       <field name="fetch_heads" string="Branch"/>
                       <field name="fetch_pull" string="PR"/>
                       <field name="send_status"/>
                       <field name="token" password="True"/>
-                    </tree>
+                    </list>
                   </field>
                 </group>
               </group>
@@ -236,58 +236,58 @@
     </record>
 
     <record id="remote_view_tree" model="ir.ui.view">
-        <field name="name">runbot.remote.tree</field>
+        <field name="name">runbot.remote.list</field>
         <field name="model">runbot.remote</field>
         <field name="arch" type="xml">
-            <tree string="Repositories">
+            <list string="Repositories">
                 <field name="name"/>
                 <field name="repo_id"/>
                 <field name="fetch_pull"/>
                 <field name="fetch_heads"/>
                 <field name="send_status"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <record id="repo_view_tree" model="ir.ui.view">
-        <field name="name">runbot.repo.tree</field>
+        <field name="name">runbot.repo.list</field>
         <field name="model">runbot.repo</field>
         <field name="arch" type="xml">
-            <tree string="Repositories">
+            <list string="Repositories">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <record id="runbot_repos_action" model="ir.actions.act_window">
         <field name="name">Repositories</field>
         <field name="res_model">runbot.repo</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
     <record id="runbot_triggers_action" model="ir.actions.act_window">
       <field name="name">Triggers</field>
       <field name="res_model">runbot.trigger</field>
-      <field name="view_mode">tree,form</field>
+      <field name="view_mode">list,form</field>
   </record>
 
   <record id="runbot_triggers_dependency_action" model="ir.actions.act_window">
       <field name="name">Triggers dependency</field>
       <field name="res_model">runbot.trigger.dependency</field>
-      <field name="view_mode">tree,form</field>
+      <field name="view_mode">list,form</field>
   </record>
 
     <record id="runbot_remotes_action" model="ir.actions.act_window">
         <field name="name">Remotes</field>
         <field name="res_model">runbot.remote</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
     <record id="runbot_triggers_category_action" model="ir.actions.act_window">
         <field name="name">Trigger Categories</field>
         <field name="res_model">runbot.category</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
   </data>

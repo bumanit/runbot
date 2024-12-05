@@ -11,7 +11,7 @@
               <group string="Base info">
                 <field name="name"/>
                 <field name="error_content_ids" readonly="1">
-                    <tree>
+                    <list>
                       <field name="content" readonly="1"/>
                       <!--field name="module_name" readonly="1"/-->
                       <!--field name="function" readonly="1"/-->
@@ -24,7 +24,7 @@
                       <field name="last_seen_date" widget="frontend_url" options="{'link_field': 'last_seen_build_id'}"/>
                       <field name="first_seen_build_id" column_invisible="True"/>
                       <field name="last_seen_build_id" column_invisible="True"/>
-                    </tree>
+                    </list>
                 </field>
               </group>
               <group name="fixer_info" string="Fixing" col="2">
@@ -57,7 +57,7 @@
               <notebook>
                 <page string="Builds">
                   <field name="unique_build_error_link_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
-                    <tree default_order="log_date desc,id desc">
+                    <list default_order="log_date desc,id desc">
                       <field name="log_date"/>
                       <field name="host" groups="base.group_no_one" optional="hide"/>
                       <field name="dest" optional="hide"/>
@@ -65,12 +65,12 @@
                       <field name="trigger_id"/>
                       <field name="description"/>
                       <field name="build_url" widget="url" readonly="1" text="View build"/>
-                    </tree>
+                    </list>
                   </field>
                 </page>
                 <page string="All links">
                   <field name="build_error_link_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
-                    <tree default_order="log_date desc,id desc">
+                    <list default_order="log_date desc,id desc">
                       <field name="log_date"/>
                       <field name="host" groups="base.group_no_one" optional="hide"/>
                       <field name="dest" optional="hide"/>
@@ -79,7 +79,7 @@
                       <field name="description"/>
                       <field name="error_content_id" widget="many2one" string="Linked Error log"/>
                       <field name="build_url" widget="url" readonly="1" text="View build"/>
-                    </tree>
+                    </list>
                   </field>
                 </page>
               </notebook>
@@ -133,7 +133,7 @@
                 <notebook>
                   <page string="Builds">
                     <field name="build_error_link_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
-                      <tree>
+                      <list>
                         <field name="log_date"/>
                         <field name="host" groups="base.group_no_one"/>
                         <field name="dest"/>
@@ -142,12 +142,12 @@
                         <field name="description"/>
                         <field name="error_content_id" widget="many2one" string="Linked Error"/>
                         <field name="build_url" widget="url" readonly="1" text="View build"/>
-                      </tree>
+                      </list>
                     </field>
                   </page>
                   <page string="Similary qualified">
                     <field name="similar_ids" widget="one2many" options="{'not_delete': True, 'no_create': True}" readonly="1">
-                      <tree>
+                      <list>
                         <field name="create_date"/>
                         <field name="module_name"/>
                         <field name="summary"/>
@@ -157,7 +157,7 @@
                         <field name="fixing_commit"/>
                         <field name="id"/>
                         <button type="object" name="get_formview_action" icon="fa-arrow-right" title="View similar error"/>
-                      </tree>
+                      </list>
                     </field>
                   </page>
                   <page string="Debug" groups="base.group_no_one">
@@ -217,10 +217,10 @@
     </record>
 
     <record id="build_error_view_tree" model="ir.ui.view">
-      <field name="name">runbot.build.error.tree</field>
+      <field name="name">runbot.build.error.list</field>
       <field name="model">runbot.build.error</field>
       <field name="arch" type="xml">
-          <tree string="Errors"
+          <list string="Errors"
                 decoration-danger="test_tags and (fixing_pr_alive or not fixing_pr_id)"
                 decoration-success="fixing_pr_id and not test_tags and not fixing_pr_alive"
                 decoration-warning="test_tags and fixing_pr_id and not fixing_pr_alive"
@@ -245,15 +245,15 @@
               <field name="fixing_pr_id" optional="hide"/>
               <field name="fixing_pr_alive" optional="hide"/>
               <field name="fixing_pr_url" widget="url" text="view PR" readonly="1" invisible="not fixing_pr_url"/>
-          </tree>
+          </list>
       </field>
   </record>
 
     <record id="build_error_content_view_tree" model="ir.ui.view">
-        <field name="name">runbot.build.error.content.tree</field>
+        <field name="name">runbot.build.error.content.list</field>
         <field name="model">runbot.build.error.content</field>
         <field name="arch" type="xml">
-            <tree string="Errors"
+            <list string="Errors"
                   decoration-danger="test_tags and (fixing_pr_alive or not fixing_pr_id)"
                   decoration-success="fixing_pr_id and not test_tags and not fixing_pr_alive"
                   decoration-warning="test_tags and fixing_pr_id and not fixing_pr_alive"
@@ -279,7 +279,7 @@
                 <field name="fixing_pr_alive" optional="hide"/>
                 <field name="fixing_pr_url" widget="url" text="view PR" readonly="1" invisible="not fixing_pr_url"/>
                 <field name="fingerprint" optional="hide"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -356,14 +356,14 @@
     <record id="open_view_build_error_tree" model="ir.actions.act_window">
       <field name="name">Errors</field>
       <field name="res_model">runbot.build.error</field>
-      <field name="view_mode">tree,form</field>
+      <field name="view_mode">list,form</field>
       <field name="context">{'search_default_not_fixed_errors': True, 'active_test': False}</field>
     </record>
 
     <record id="open_view_build_error_content_tree" model="ir.actions.act_window">
         <field name="name">Build errors contents</field>
         <field name="res_model">runbot.build.error.content</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
         <field name="context">{'search_default_not_fixed_errors': True, 'active_test': False}</field>
     </record>
 
@@ -388,15 +388,15 @@
     </record>
 
     <record id="build_error_regex_tree" model="ir.ui.view">
-        <field name="name">runbot.error.regex.tree</field>
+        <field name="name">runbot.error.regex.list</field>
         <field name="model">runbot.error.regex</field>
         <field name="arch" type="xml">
-            <tree string="Errors Regexes">
+            <list string="Errors Regexes">
                 <field name="sequence" widget="handle"/>
                 <field name="regex"/>
                 <field name="re_type"/>
                 <field name="replacement"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -415,7 +415,7 @@
     <record id="open_view_error_regex" model="ir.actions.act_window">
         <field name="name">Errors regex</field>
         <field name="res_model">runbot.error.regex</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
     <record id="action_find_duplicates" model="ir.actions.server">
@@ -429,14 +429,14 @@
     </record>
 
     <record id="build_error_qualify_regex_tree" model="ir.ui.view">
-        <field name="name">runbot.error.qualify.regex.tree</field>
+        <field name="name">runbot.error.qualify.regex.list</field>
         <field name="model">runbot.error.qualify.regex</field>
         <field name="arch" type="xml">
-            <tree string="Qualifying Regexes">
+            <list string="Qualifying Regexes">
                 <field name="sequence" widget="handle"/>
                 <field name="regex" readonly="1"/>
                 <field name="source_field" readonly="1"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -458,13 +458,13 @@
               </group>
               <group>
                 <field name="test_ids">
-                  <tree string="Test Samples" decoration-success="is_matching" decoration-danger="not is_matching">
+                  <list string="Test Samples" decoration-success="is_matching" decoration-danger="not is_matching">
                     <field name="error_content_id"/>
                     <field name="build_error_summary"/>
                     <field name="expected_result" widget="runbotjsonb"/>
                     <field name="result" widget="runbotjsonb" readonly="1"/>
                     <field name="is_matching" column_invisible="True"/>
-                  </tree>
+                  </list>
                 </field>
               </group>
             </sheet>
@@ -496,7 +496,7 @@
     <record id="open_view_build_error_qualify_regex_tree" model="ir.actions.act_window">
         <field name="name">Build Errors Qualifying Regexes</field>
         <field name="res_model">runbot.error.qualify.regex</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
   </data>
