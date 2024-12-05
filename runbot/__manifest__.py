@@ -68,12 +68,27 @@
         'runbot.assets_frontend': [
             ('include', 'web.assets_frontend_minimal'),
 
+            'web/static/lib/luxon/luxon.js',
+            'web/static/lib/owl/owl.js',
+            'web/static/lib/owl/odoo_module.js',
+            '/runbot/static/src/libs/jquery/jquery.js',
+            'web/static/src/legacy/js/libs/jquery.js',
+            '/runbot/static/src/libs/popper/popper.js',
+            'web/static/src/legacy/js/core/class.js',
+
+            'web/static/src/env.js',
+            'web/static/src/core/**/*.js',  # Note that 'web/static/src/core/utils/ui.js' is included in assets_frontend_minimal already
+            'web/static/src/core/**/*.xml',  # Note that 'web/static/src/core/utils/ui.js' is included in assets_frontend_minimal already
+            'web/static/src/public/public_component_service.js',
+            'web/static/src/legacy/js/public/public_root.js',
+            'web/static/src/legacy/js/public/public_root_instance.js',
+            'web/static/src/legacy/js/public/public_widget.js',
+            'web/static/src/legacy/js/public/signin.js',
+
             '/runbot/static/src/libs/bootstrap/css/bootstrap.css',
             '/runbot/static/src/libs/fontawesome/css/font-awesome.css',
             '/runbot/static/src/css/runbot.css',
 
-            '/runbot/static/src/libs/jquery/jquery.js',
-            '/runbot/static/src/libs/popper/popper.js',
             '/runbot/static/src/libs/bootstrap/js/bootstrap.bundle.js',
             '/runbot/static/src/js/runbot.js',
         ],
