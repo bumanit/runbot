@@ -19,7 +19,7 @@
            t-att-title="title.strip()"
            t-att-target="target or None"
            t-att-class="classes or None"
-        ><t t-esc="pr.display_name"/></a>
+        ><t t-out="pr.display_name"/></a>
     </template>
 
     <template id="staging-statuses" name="dropdown statuses list of stagings">
@@ -50,7 +50,7 @@
                        else 'bg-danger' if st[0] in ('error', 'failure')
                        else 'bg-info' if st[0]
                        else 'bg-light'}}">
-                        <t t-esc="req.repo_id.name"/>: <t t-esc="req.context"/>
+                        <t t-out="req.repo_id.name"/>: <t t-out="req.context"/>
                     </a>
                 </t>
             </div>
@@ -196,7 +196,7 @@
                 <li t-attf-class="staging {{stateclass.strip()}} {{decorationclass.strip()}}" t-att-title="title.strip() or None">
                     <ul class="list-unstyled">
                         <li t-foreach="staging.batch_ids" t-as="batch" class="batch">
-                            <t t-esc="batch.prs[:1].label"/>
+                            <t t-out="batch.prs[:1].label"/>
                             <t t-foreach="batch.prs" t-as="pr">
                                 <t t-call="runbot_merge.link-pr"/>
                             </t>
@@ -219,7 +219,7 @@
         <t t-call="website.layout">
             <div id="wrap"><div class="container-fluid">
                 <section class="row">
-                    <h1 class="col-md-12"><t t-esc="branch.project_id.name"/>: <t t-esc="branch.name"/></h1>
+                    <h1 class="col-md-12"><t t-out="branch.project_id.name"/>: <t t-out="branch.name"/></h1>
                 </section>
                 <form method="get">
                     <label for="until">Staged before:</label>
@@ -290,7 +290,7 @@
                                                     data-bs-toggle="dropdown"
                                                     aria-expanded="false"
                                             >
-                                                <t t-esc="first_pr.label"/>
+                                                <t t-out="first_pr.label"/>
                                                 <span class="caret"></span>
                                             </button>
                                             <div class="dropdown-menu">
@@ -321,7 +321,7 @@
             <div id="wrap"><div class="container-fluid">
                 <h1>Changelog</h1>
                 <section t-foreach="entries" t-as="entry">
-                    <h3 t-if="not entry_first" t-esc="entry"/>
+                    <h3 t-if="not entry_first" t-out="entry"/>
                     <ul>
                         <li t-foreach="sorted(entry_value)" t-as="item">
                             <t t-out="item"/>
@@ -336,14 +336,14 @@
         <div class="alert alert-success">
             Merged
             <t t-if="merged_head">
-                at <a t-attf-href="https://github.com/{{pr.repository.name}}/commit/{{merged_head}}"><t t-esc="merged_head"/></a>
+                at <a t-attf-href="https://github.com/{{pr.repository.name}}/commit/{{merged_head}}"><t t-out="merged_head"/></a>
             </t>
             <p>Statuses:</p>
             <ul>
                 <t t-foreach="pr.repository.status_ids._for_pr(pr)" t-as="ci">
                     <t t-set="st" t-value="statuses.get(ci.context.strip())"/>
                     <li t-if="st">
-                        <a t-att-href="st.get('target_url') if st else None"><t t-esc="ci.context.strip()"/></a><t t-if="st and st.get('description')">: <t t-esc="st['description']"/></t>
+                        <a t-att-href="st.get('target_url') if st else None"><t t-out="ci.context.strip()"/></a><t t-if="st and st.get('description')">: <t t-out="st['description']"/></t>
                     </li>
                 </t>
             </ul>
@@ -367,7 +367,7 @@
     <template id="view_pull_request_info_error">
         <div class="alert alert-danger">
             Error:
-            <span t-esc="pr.with_context(active_test=False).batch_id.staging_ids[-1:].reason">
+            <span t-out="pr.with_context(active_test=False).batch_id.staging_ids[-1:].reason">
                 Unable to stage PR
             </span>
         </div>
@@ -410,7 +410,7 @@
                             <t t-else="">ok</t>
                         </t>
                         <li t-att-class="result">
-                            <a t-att-href="st.get('target_url') if st else None"><t t-esc="ci.context.strip()"/></a><t t-if="st and st.get('description')">: <t t-esc="st['description']"/></t>
+                            <a t-att-href="st.get('target_url') if st else None"><t t-out="ci.context.strip()"/></a><t t-if="st and st.get('description')">: <t t-out="st['description']"/></t>
                         </li>
                     </t>
                 </ul>
@@ -443,7 +443,7 @@
                 </h1>
                 <h6>Created by <span t-field="pr.author.display_name"/></h6>
                 <t t-set="tmpl">
-                    <t t-if="pr.state in ('merged', 'closed', 'error')"><t t-esc="pr.state"/></t>
+                    <t t-if="pr.state in ('merged', 'closed', 'error')"><t t-out="pr.state"/></t>
                     <t t-elif="pr.staging_id">staging</t>
                     <t t-else="">open</t>
                 </t>
