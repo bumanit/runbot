@@ -13,10 +13,10 @@
                         <field name="name"/>
                         <field name="description"/>
                         <field name="step_order_ids">
-                            <tree string="Step list" editable="bottom">
+                            <list string="Step list" editable="bottom">
                                 <field name="step_id" widget="Many2one" options="{'no_edit': 1}"/>
                                 <field name="sequence" widget="handle"/>
-                            </tree>
+                            </list>
                         </field>
                         <field name="protected"/>
                         <field name="group" groups="base.group_no_one"/>
@@ -52,11 +52,11 @@
                     </group>
                     <group string="Stats regexes" invisible="not make_stats">
                       <field name="build_stat_regex_ids">
-                          <tree string="Regexes" editable="bottom">
+                          <list string="Regexes" editable="bottom">
                               <field name="name"/>
                               <field name="regex"/>
                               <field name="description"/>
-                          </tree>
+                          </list>
                       </field>
                     </group>
                     <group string="Python settings" invisible="job_type not in 'python'">
@@ -105,11 +105,11 @@
                         <field name="upgrade_flat"/>
                         <field name="upgrade_config_id"/>
                         <field string="Db to upgrade" name="upgrade_dbs">
-                          <tree editable="bottom">
+                          <list editable="bottom">
                               <field name="config_id"/>
                               <field name="db_pattern"/>
                               <field name="min_target_version_id"/>
-                          </tree>
+                          </list>
                         </field>
                       </group>
                     </group>
@@ -123,9 +123,9 @@
                     </group>
                     <group>
                       <field name="step_order_ids" groups="base.group_no_one" readonly="1">
-                        <tree>
+                        <list>
                             <field name="config_id" widget="Many2one" options="{'no_edit': 1}"/>
-                        </tree>
+                        </list>
                       </field>
                     </group>
                 </sheet>
@@ -138,25 +138,25 @@
     </record>
 
     <record id="runbot_config_tree_view" model="ir.ui.view">
-      <field name="name">Runbot Config tree view</field>
+      <field name="name">Runbot Config list view</field>
       <field name="model">runbot.build.config</field>
       <field name="arch" type="xml">
-        <tree string="Build Configs">
+        <list string="Build Configs">
           <field name="name"/>
           <field name="description"/>
-        </tree>
+        </list>
       </field>
     </record>
 
     <record id="runbot_step_config_tree_view" model="ir.ui.view">
-      <field name="name">Runbot Config Step tree view</field>
+      <field name="name">Runbot Config Step list view</field>
       <field name="model">runbot.build.config.step</field>
       <field name="arch" type="xml">
-        <tree string="Build Config Steps">
+        <list string="Build Config Steps">
           <field name="name"/>
           <field name="job_type"/>
           <field name="group"/>
-        </tree>
+        </list>
       </field>
     </record>
 
@@ -201,13 +201,13 @@
     <record id="open_view_job_config_tree" model="ir.actions.act_window">
         <field name="name">Build Configs</field>
         <field name="res_model">runbot.build.config</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
     <record id="open_view_job_tree" model="ir.actions.act_window">
         <field name="name">Build Config Steps</field>
         <field name="res_model">runbot.build.config.step</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
 

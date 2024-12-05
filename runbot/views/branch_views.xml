@@ -30,21 +30,21 @@
 
 
     <record id="branch_view_tree" model="ir.ui.view">
-        <field name="name">runbot.branch.tree</field>
+        <field name="name">runbot.branch.list</field>
         <field name="model">runbot.branch</field>
         <field name="arch" type="xml">
-            <tree string="Branches">
+            <list string="Branches">
                 <field name="create_date"/>
                 <field name="remote_id"/>
                 <field name="name"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <record id="open_view_branch_tree" model="ir.actions.act_window">
         <field name="name">Branches</field>
         <field name="res_model">runbot.branch</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
   </data>
