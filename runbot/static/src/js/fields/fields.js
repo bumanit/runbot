@@ -23,7 +23,7 @@ function stringify(obj) {
 export class JsonField extends TextField {
     static template = xml`
     <t t-if="props.readonly">
-            <span t-esc="value"/>
+            <span t-out="value"/>
         </t>
         <t t-else="">
             <div t-ref="div">
@@ -64,7 +64,7 @@ registry.category("fields").add("runbotjsonb", {
 
 export class FrontendUrl extends Component {
     static template = xml`
-        <div><a t-att-href="route" target="_blank"><t t-esc="displayValue"/></a></div>
+        <div><a t-att-href="route" target="_blank"><t t-out="displayValue"/></a></div>
     `;
 
     static components = { Many2OneField };
