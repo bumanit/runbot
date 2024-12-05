@@ -9,24 +9,24 @@
                         <button class="btn btn-sm btn-outline-primary" t-on-click="toggleKept">Toggle context</button>
                         <button class="btn btn-sm btn-outline-primary" t-on-click="copyNewToClipboard(trackingValue)">Copy new value to clipboard</button>
                     </div>
-                    <div class="o-mail-Message-trackingField ms-1 fst-italic text-muted">(<t t-esc="trackingValue.changedField"/>)</div>
+                    <div class="o-mail-Message-trackingField ms-1 fst-italic text-muted">(<t t-out="trackingValue.changedField"/>)</div>
                     <div class="code_diff">
                         <table>
                             <t t-foreach="lines(trackingValue)" t-as="line" t-key="line_index">
                                 <tr t-if="kept or line.type!=='kept'">
-                                    <td class="col_number" t-esc="line.pre_line_counter"/>
-                                    <td class="col_number" t-esc="line.post_line_counter"/>
-                                    <td class="code" t-att-class="line.type" t-esc="line.line"/>
+                                    <td class="col_number" t-out="line.pre_line_counter"/>
+                                    <td class="col_number" t-out="line.post_line_counter"/>
+                                    <td class="code" t-att-class="line.type" t-out="line.line"/>
                                 </tr>
                             </t>
                         </table>
                     </div>
                 </t>
                 <t t-else="">
-                    <span class="o-mail-Message-trackingOld me-1 px-1 text-muted fw-bold" t-esc="formatTrackingOrNone(trackingValue.fieldType, trackingValue.oldValue)"/>
+                    <span class="o-mail-Message-trackingOld me-1 px-1 text-muted fw-bold" t-out="formatTrackingOrNone(trackingValue.fieldType, trackingValue.oldValue)"/>
                     <i class="o-mail-Message-trackingSeparator fa fa-long-arrow-right mx-1 text-600"/>
-                    <span class="o-mail-Message-trackingNew me-1 fw-bold text-info" t-esc="formatTrackingOrNone(trackingValue.fieldType, trackingValue.newValue)"/>
-                    <span class="o-mail-Message-trackingField ms-1 fst-italic text-muted">(<t t-esc="trackingValue.changedField"/>)</span>
+                    <span class="o-mail-Message-trackingNew me-1 fw-bold text-info" t-out="formatTrackingOrNone(trackingValue.fieldType, trackingValue.newValue)"/>
+                    <span class="o-mail-Message-trackingField ms-1 fst-italic text-muted">(<t t-out="trackingValue.changedField"/>)</span>
                 </t>
             </li>
         </xpath>
