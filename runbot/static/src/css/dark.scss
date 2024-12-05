@@ -1,0 +1,9 @@
+/*
+ * Dark theme
+ */
+
+:root[data-bs-theme=dark] {
+    --btn-default-border: #333;
+    --btn-default-color: var(--bs-body-color);
+    --active-project-color: #CCC;
+}

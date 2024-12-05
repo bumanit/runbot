@@ -88,6 +88,9 @@
             '/runbot/static/src/libs/bootstrap/css/bootstrap.css',
             '/runbot/static/src/libs/fontawesome/css/font-awesome.css',
             '/runbot/static/src/css/runbot.scss',
+            '/runbot/static/src/css/legacy.scss',
+            '/runbot/static/src/css/dark.scss',
+            '/runbot/static/src/css/red404.scss',
 
             '/runbot/static/src/libs/bootstrap/js/bootstrap.bundle.js',
             '/runbot/static/src/js/runbot.js',
