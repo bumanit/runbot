@@ -25,14 +25,14 @@
     <record id="view_runbot_project_tree" model="ir.ui.view">
         <field name="model">runbot.project</field>
         <field name="arch" type="xml">
-            <tree string="Projects">
+            <list string="Projects">
                 <field name="name"/>
                 <field name="keep_sticky_running"/>
                 <field name="dockerfile_id"/>
                 <field name="group_ids"/>
                 <field name="trigger_ids"/>
                 <field name="sequence"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -75,33 +75,33 @@
                     <notebook>
                         <page string="Trigger customisation">
                             <field name="trigger_custom_ids" nolabel="1">
-                                <tree editable="bottom">
+                                <list editable="bottom">
                                     <field name="start_mode"/>
                                     <field name="trigger_id" domain="[('project_id', '=', parent.project_id)]"/>
                                     <field name="config_id"/>
                                     <field name="extra_params"/>
                                     <field name="config_data" widget="runbotjsonb"/>
-                                </tree>
+                                </list>
                             </field>
                         </page>
                         <page string="branches">
                             <field name="branch_ids" nolabel="1">
-                                <tree>
+                                <list>
                                     <field name="dname"/>
                                     <field name="remote_id"/>
                                     <field name="pull_head_name"/>
                                     <field name="target_branch_name"/>
-                                </tree>
+                                </list>
                             </field>
                         </page>
                         <page string="Last batchs">
                             <field name="last_batchs" nolabel="1">
-                                <tree>
+                                <list>
                                     <field name="id" widget="char_frontend_url"/>
                                     <field name="state"/>
                                     <field name="commit_link_ids"/>
                                     <field name="slot_ids"/>
-                                </tree>
+                                </list>
                             </field>
                         </page>
                     </notebook>
@@ -117,13 +117,13 @@
     <record id="view_runbot_custom_trigger_tree" model="ir.ui.view">
         <field name="model">runbot.bundle.trigger.custom</field>
         <field name="arch" type="xml">
-            <tree string="Bundle">
+            <list string="Bundle">
                 <field name="bundle_id"/>
                 <field name="trigger_id"/>
                 <field name="config_id"/>
                 <field name="extra_params"/>
                 <field name="config_data" widget="runbotjsonb"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -145,7 +145,7 @@
     <record id="view_runbot_bundle_tree" model="ir.ui.view">
         <field name="model">runbot.bundle</field>
         <field name="arch" type="xml">
-            <tree string="Bundle">
+            <list string="Bundle">
                 <field name="project_id"/>
                 <field name="name" widget="char_frontend_url"/>
                 <field name="version_number"/>
@@ -156,7 +156,7 @@
                 <field name="no_build"/>
                 <field name="branch_ids"/>
                 <field name="version_id"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -190,17 +190,17 @@
                     <field name="bundle_id"/>
                     <field name="state"/>
                     <field name="commit_link_ids">
-                        <tree>
+                        <list>
                             <field name="commit_id"/>
                             <field name="match_type"/>
-                        </tree>
+                        </list>
                     </field>
                     <field name="slot_ids">
-                        <tree>
+                        <list>
                             <field name="trigger_id"/>
                             <field name="build_id"/>
                             <field name="link_type"/>
-                        </tree>
+                        </list>
                     </field>
                 </group>
             </form>
@@ -210,53 +210,53 @@
     <record id="view_runbot_batch_tree" model="ir.ui.view">
         <field name="model">runbot.batch</field>
         <field name="arch" type="xml">
-            <tree string="Batchs">
+            <list string="Batchs">
                 <field name="bundle_id"/>
                 <field name="state"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <record id="view_runbot_version_tree" model="ir.ui.view">
         <field name="model">runbot.version</field>
         <field name="arch" type="xml">
-            <tree string="Version">
+            <list string="Version">
                 <field name="name"/>
                 <field name="number"/>
                 <field name="is_major"/>
                 <field name="dockerfile_id"/>
-            </tree>
+            </list>
         </field>
     </record>
     <record id="action_bundle_custom_trigger" model="ir.actions.act_window">
         <field name="name">Custom triggers</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">runbot.bundle.trigger.custom</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
     <record id="action_bundle" model="ir.actions.act_window">
         <field name="name">Bundles</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">runbot.bundle</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
     <record id="action_bundle_project" model="ir.actions.act_window">
         <field name="name">Projects</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">runbot.project</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
     <record id="action_bundle_version" model="ir.actions.act_window">
         <field name="name">Versions</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">runbot.version</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
     <record id="action_bundle_batch" model="ir.actions.act_window">
         <field name="name">Batches</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">runbot.batch</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
   </data>
 </odoo>

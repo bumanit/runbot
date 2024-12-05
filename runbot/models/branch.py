@@ -135,7 +135,7 @@ class Branch(models.Model):
                 if branch.is_pr:
                     branch.branch_url = "https://%s/pull/%s" % (branch.remote_id.base_url, branch.name)
                 else:
-                    branch.branch_url = "https://%s/tree/%s" % (branch.remote_id.base_url, branch.name)
+                    branch.branch_url = "https://%s/list/%s" % (branch.remote_id.base_url, branch.name)
             else:
                 branch.branch_url = ''
 

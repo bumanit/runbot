@@ -20,23 +20,23 @@
     </record>
 
     <record id="build_stat_regex_tree" model="ir.ui.view">
-        <field name="name">runbot.build.stat.regex.tree</field>
+        <field name="name">runbot.build.stat.regex.list</field>
         <field name="model">runbot.build.stat.regex</field>
         <field name="arch" type="xml">
-            <tree string="Statistics Regexes">
+            <list string="Statistics Regexes">
                 <field name="name"/>
                 <field name="generic"/>
                 <field name="description"/>
                 <field name="regex"/>
                 <field name="sequence" widget="handle"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <record id="open_view_stat_regex_tree" model="ir.actions.act_window">
         <field name="name">Stat regex</field>
         <field name="res_model">runbot.build.stat.regex</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
   </data>
