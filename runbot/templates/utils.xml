@@ -5,7 +5,7 @@
         <template id="runbot.base_page">
             <html t-att-data-bs-theme="theme">
                 <head>
-                    <title t-esc="title or 'Runbot'"/>
+                    <title t-out="title or 'Runbot'"/>
                     <link rel="stylesheet" type="text/css" href="/runbot/static/src/libs/bootstrap/css/bootstrap.css"/>
                     <link rel="stylesheet" type="text/css" href="/runbot/static/src/libs/fontawesome/css/font-awesome.css"/>
                     <link rel="stylesheet" type="text/css" href="/runbot/static/src/css/runbot.css"/>
@@ -53,7 +53,7 @@
                         <nav class="navbar navbar-expand-md bg-body-tertiary">
                             <a t-if="project" t-att-href="qu(search=search)">
                                 <b class="active_project">
-                                    <t t-esc="project.name"/>
+                                    <t t-out="project.name"/>
                                 </b>
                             </a>
                             <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#top_menu_collapse">
@@ -65,7 +65,7 @@
                                         <t t-foreach="projects" t-as="l_project">
                                             <li class="nav-item">
                                                 <a class="nav-link" t-att-href="qu('/runbot/%s' % slug(l_project), search=search)">
-                                                    <t t-esc="l_project.name"/>
+                                                    <t t-out="l_project.name"/>
                                                 </a>
                                             </li>
                                         </t>
@@ -82,7 +82,7 @@
                                         <li class="nav-item dropdown" t-ignore="true">
                                             <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown">
                                                 <b>
-                                                    <span t-esc="user_id.name[:23] + '...' if user_id.name and len(user_id.name) &gt; 25 else user_id.name"/>
+                                                    <span t-out="user_id.name[:23] + '...' if user_id.name and len(user_id.name) &gt; 25 else user_id.name"/>
                                                 </b>
                                             </a>
                                             <div class="dropdown-menu dropdown-menu-end js_usermenu" role="menu">
@@ -91,7 +91,7 @@
                                                 <div t-if="user_id.runbot_team_ids" class="dropdown-divider"/>
                                                 <div t-if="user_id.runbot_team_ids" class="dropdown-header">Teams</div>
                                                 <a t-foreach="user_id.runbot_team_ids" t-as="team" class="dropdown-item" role="menuitem" t-attf-href="/runbot/teams/{{team.id}}">
-                                                    <t t-esc="team.name.capitalize()"/>
+                                                    <t t-out="team.name.capitalize()"/>
                                                 </a>
                                             </div>
                                         </li>
@@ -136,7 +136,7 @@
 
                             <div class="text-nowrap btn-group btn-group-sm" role="group">
                                 <t t-foreach="categories" t-as="category">
-                                    <button t-attf-onclick="document.cookie = 'category={{category.id}}; expires=Thu, 1 Dec 2942 12:00:00 UTC; path=/'; location.reload();" type="button" t-attf-class="btn btn-{{'primary' if category.id == active_category_id else 'secondary'}}" t-esc="category.name"/>
+                                    <button t-attf-onclick="document.cookie = 'category={{category.id}}; expires=Thu, 1 Dec 2942 12:00:00 UTC; path=/'; location.reload();" type="button" t-attf-class="btn btn-{{'primary' if category.id == active_category_id else 'secondary'}}" t-out="category.name"/>
                                 </t>
                             </div>
         
@@ -146,12 +146,12 @@
                                 <t t-foreach="categories" t-as="category">
                                     <t t-set="category_triggers" t-value="triggers.filtered(lambda t: not t.manual and t.category_id == category)"/>
                                     <t t-if="category_triggers">
-                                        <h3 t-esc="category.name"/>
+                                        <h3 t-out="category.name"/>
                                         <div class="row">
                                             <t t-foreach="category_triggers" t-as="trigger">
                                                 <div class="col-md-3 text-nowrap">
                                                     <input t-attf-class="trigger_selection {{'trigger_selection_hide' if trigger.hide else 'trigger_selection_show'}}" type="checkbox" t-attf-name="trigger_{{trigger.id}}" t-attf-id="trigger_{{trigger.id}}" t-att-checked="trigger_display is None or trigger.id in trigger_display"/>
-                                                    <label t-attf-for="trigger_{{trigger.id}}" t-esc="trigger.name"/>
+                                                    <label t-attf-for="trigger_{{trigger.id}}" t-out="trigger.name"/>
                                                 </div>
                                             </t>
                                         </div>
@@ -181,8 +181,8 @@
                 <li class="nav-item">
                     <a href="/runbot/errors" class="nav-link text-danger" t-attf-title="You have {{nb_assigned_errors}} random bug assigned">
                         <i class="fa fa-bug"/>
-                        <t t-esc="nb_assigned_errors"/>
-                        <span class="text-warning" t-if="nb_team_errors">+<t t-esc="nb_team_errors"/></span>
+                        <t t-out="nb_assigned_errors"/>
+                        <span class="text-warning" t-if="nb_team_errors">+<t t-out="nb_team_errors"/></span>
                     </a>
                 </li>
             </t>
@@ -191,7 +191,7 @@
                 <li class="nav-item">
                     <a href="/runbot/errors" class="nav-link text-warning" t-attf-title="Your team has {{nb_team_errors}} random bug assigned">
                         <i class="fa fa-bug"/>
-                        <t t-esc="nb_team_errors"/>
+                        <t t-out="nb_team_errors"/>
                     </a>
                 </li>
             </t>
@@ -207,7 +207,7 @@
             <a href="/runbot/load_info" class="slots_infos">
                 <span t-attf-class="badge text-bg-{{pending_level}}">
                     Pending:
-                    <t t-esc="pending_count"/><span title="Assigned build (reserved host)" t-if="pending_assigned_count">(<t t-esc="pending_assigned_count"/>)</span>
+                    <t t-out="pending_count"/><span title="Assigned build (reserved host)" t-if="pending_assigned_count">(<t t-out="pending_assigned_count"/>)</span>
                 </span>
                 <t t-set="testing" t-value="hosts_data._total_testing()"/>
                 <t t-set="workers" t-value="hosts_data._total_workers()"/>
@@ -220,9 +220,9 @@
                 </t>
                 <span t-attf-class="badge text-bg-{{klass}}">
                     Testing:
-                    <t t-esc="testing"/>
+                    <t t-out="testing"/>
                     /
-                    <t t-esc="workers"/>
+                    <t t-out="workers"/>
                 </span>
             </a>
         </template>
@@ -235,10 +235,10 @@
                     <i t-attf-class="fa fa-{{slot._fa_link_type()}}"/>
                 </span>
                 <a t-if="bu" t-attf-href="/runbot/batch/{{slot.batch_id.id}}/build/#{bu.id}" t-attf-class="btn btn-default slot_name">
-                    <span t-esc="slot.trigger_id.name"/>
+                    <span t-out="slot.trigger_id.name"/>
                 </a>
                 <span t-else="" t-attf-class="btn btn-default disabled slot_name">
-                    <span t-esc="slot.trigger_id.name"/>
+                    <span t-out="slot.trigger_id.name"/>
                 </span>
                 <a t-if="slot.trigger_id.report_view_id" title="View last trigger report" t-attf-href="/runbot/trigger/report/{{slot.trigger_id.id}}" class="fa fa-eye btn btn-info"/>
                 <a t-if="bu.local_state == 'running' and bu.database_ids" t-attf-href="/runbot/run/{{bu.id}}" class="fa fa-sign-in btn btn-info"/>
@@ -290,7 +290,7 @@
             <t t-if="build.global_result == 'warn'">
                 <t t-set="rowclass">warning</t>
             </t>
-            <t t-esc="rowclass"/>
+            <t t-out="rowclass"/>
         </template>
 
         <template id="runbot.build_menu">
@@ -307,7 +307,7 @@
                     <t t-foreach="bu.database_ids[1:].sorted('name')" t-as="db">
                         <a class="dropdown-item" t-attf-href="/runbot/run/{{bu.id}}/{{db.db_suffix}}">
                             <i class="fa fa-sign-in"/>
-                            Connect <t t-esc="db.db_suffix"></t>
+                            Connect <t t-out="db.db_suffix"></t>
                         </a>
                     </t>
                     <a class="dropdown-item" t-attf-href="http://{{bu.domain}}/web/database/selector">
@@ -355,7 +355,7 @@
                     <a class="dropdown-item" t-attf-href="{{log_url}}/runbot/static/build/#{bu.dest}/logs/#{log_name}.txt">
                         <i class="fa fa-file-text-o"/>
                         Full
-                        <t t-esc="log_name"/>
+                        <t t-out="log_name"/>
                         logs
                     </a>
                 </t>
@@ -382,7 +382,7 @@
             <t t-foreach="bundle.branch_ids.sorted(key=lambda b: (not b.alive, b.remote_id.repo_id.sequence, b.remote_id.repo_id.id, b.is_pr, b.id))" t-as="branch">
               <t t-set="link_title" t-value="'View %s %s on Github' % ('PR' if branch.is_pr else 'Branch', branch.name)"/>
               <a t-att-href="branch.branch_url" class="dropdown-item" t-att-title="link_title">
-                <span class="font-italic text-muted" t-esc="branch.remote_id.short_name"/> <span t-att-class="'' if branch.alive else 'line-through'" t-esc="branch.name"/> <i t-if="not branch.alive" title="deleted/closed" class="fa fa-ban text-danger"/>
+                <span class="font-italic text-muted" t-out="branch.remote_id.short_name"/> <span t-att-class="'' if branch.alive else 'line-through'" t-out="branch.name"/> <i t-if="not branch.alive" title="deleted/closed" class="fa fa-ban text-danger"/>
               </a>
             </t>
           </div>
@@ -404,11 +404,11 @@
                 <t t-foreach="project.trigger_ids.sorted(lambda t: (t.category_id.id, t.sequence, t.id))" t-as="trigger">
                     <t t-if="trigger.has_stats and not trigger.manual" >
                         <t t-if="current_category != trigger.category_id">
-                            <span class="dropdown-item"><b><t t-esc="trigger.category_id.name"/></b></span>
+                            <span class="dropdown-item"><b><t t-out="trigger.category_id.name"/></b></span>
                             <t t-set="current_category" t-value="trigger.category_id"/>
                         </t>
                         <a class="dropdown-item" t-attf-href="/runbot/stats/{{bundle.id}}/{{trigger.id}}">
-                            <t t-esc="trigger.name" />
+                            <t t-out="trigger.name" />
                         </a>
                     </t>
                 </t>
