@@ -66,15 +66,15 @@
             'runbot/static/src/js/fields/*',
         ],
         'runbot.assets_frontend': [
-            '/web/static/lib/bootstrap/dist/css/bootstrap.css',
-            '/web/static/src/libs/fontawesome/css/font-awesome.css',
+            ('include', 'web.assets_frontend_minimal'),
+
+            '/runbot/static/src/libs/bootstrap/css/bootstrap.css',
+            '/runbot/static/src/libs/fontawesome/css/font-awesome.css',
             '/runbot/static/src/css/runbot.css',
 
-            '/web/static/lib/jquery/jquery.js',
-            '/web/static/lib/popper/popper.js',
-            #'/web/static/lib/bootstrap/js/dist/util.js',
-            '/web/static/lib/bootstrap/js/dist/dropdown.js',
-            '/web/static/lib/bootstrap/js/dist/collapse.js',
+            '/runbot/static/src/libs/jquery/jquery.js',
+            '/runbot/static/src/libs/popper/popper.js',
+            '/runbot/static/src/libs/bootstrap/js/bootstrap.bundle.js',
             '/runbot/static/src/js/runbot.js',
         ],
     },

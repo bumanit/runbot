@@ -6,14 +6,9 @@
             <html t-att-data-bs-theme="theme">
                 <head>
                     <title t-out="title or 'Runbot'"/>
-                    <link rel="stylesheet" type="text/css" href="/runbot/static/src/libs/bootstrap/css/bootstrap.css"/>
-                    <link rel="stylesheet" type="text/css" href="/runbot/static/src/libs/fontawesome/css/font-awesome.css"/>
-                    <link rel="stylesheet" type="text/css" href="/runbot/static/src/css/runbot.css"/>
 
-                    <script src="/runbot/static/src/libs/jquery/jquery.js" type="text/javascript"/>
-                    <script type="text/javascript" src="/runbot/static/src/libs/popper/popper.js"/>
-                    <script type="text/javascript" src="/runbot/static/src/libs/bootstrap/js/bootstrap.bundle.js"/>
-                    <script type="text/javascript" src="/runbot/static/src/js/runbot.js"/>
+                    <t t-call-assets="runbot.assets_frontend"/>
+
 
                     <t t-if="refresh">
                         <meta http-equiv="refresh" t-att-content="refresh"/>
