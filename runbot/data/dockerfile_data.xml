@@ -185,7 +185,6 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1</field>
         <field name="packages">
             ebaysdk==2.1.5  # no debian package but needed in odoo requirements
             pdf417gen==0.7.1  # needed by l10n_cl_edi
-            ruff==0.4.7 # runbot check style
         </field>
         <field name="reference_docker_layer_id" ref="runbot.docker_layer_pip_packages_template"/>
     </record>
