@@ -59,6 +59,8 @@ class Batch(models.Model):
 
     def _get_global_result(self):
         """Returns the worst result from the related builds and logs"""
+        if not self:
+            return 'ok'
         self.ensure_one()
         batch_result = 'warn' if any(log.level != 'INFO' for log in self.log_ids) else 'ok'
         if self.state == 'skipped':
