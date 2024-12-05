@@ -518,7 +518,7 @@ class BuildErrorContent(models.Model):
         for record in self:
             all_qualifiers = {}
             for qualify_regex in qualify_regexes:
-                res = qualify_regex._qualify(record.content)  # TODO, MAYBE choose the source field
+                res = qualify_regex._qualify(record[qualify_regex.source_field])
                 if res:
                     # res.update({'qualifier_id': qualify_regex.id}) Probably not a good idea
                     all_qualifiers.update(res)
@@ -671,7 +671,7 @@ class ErrorQualifyRegex(models.Model):
     source_field = fields.Selection(
         [
             ("content", "Content"),
-            ("module", "Module Name"),
+            ("module_name", "Module Name"),
             ("function", "Function Name"),
             ("file_path", "File Path"),
         ],
@@ -739,8 +739,8 @@ class QualifyErrorTest(models.Model):
 
     qualify_regex_id = fields.Many2one('runbot.error.qualify.regex', required=True)
     error_content_id = fields.Many2one('runbot.build.error.content', string='Build Error', required=True)
-    build_error_summary = fields.Char(related='error_content_id.summary')
-    build_error_content = fields.Text(related='error_content_id.content')
+    build_error_summary = fields.Char(compute='_compute_summary')
+    build_error_content = fields.Text(compute='_compute_content')
     expected_result = JsonDictField('Expected Qualifiers')
     result = JsonDictField('Result', compute='_compute_result')
     is_matching = fields.Boolean(compute='_compute_result', default=False)
@@ -750,3 +750,14 @@ class QualifyErrorTest(models.Model):
         for record in self:
             record.result = record.qualify_regex_id._qualify(record.build_error_content)
             record.is_matching = record.result == record.expected_result and record.result != {}
+
+    @api.depends('qualify_regex_id', 'error_content_id')
+    def _compute_summary(self):
+        for record in self:
+            content = record.error_content_id[record.qualify_regex_id.source_field]
+            record.build_error_summary = content[:70] if content else False
+
+    @api.depends('qualify_regex_id', 'error_content_id')
+    def _compute_content(self):
+        for record in self:
+            record.build_error_content = record.error_content_id[record.qualify_regex_id.source_field]
