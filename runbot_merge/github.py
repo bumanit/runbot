@@ -151,7 +151,8 @@ class GH(object):
             if to_sleep > 0:
                 time.sleep(to_sleep)
 
-        path = f'/repos/{self._repo}/{path}'
+        if path != '/graphql':
+            path = f'/repos/{self._repo}/{path}'
         r = self._session.request(method, self._url + path, params=params, json=json)
         if method.casefold() != 'get':
             self._last_update = time.time() + int(r.headers.get('Retry-After', 0))

@@ -1,5 +1,6 @@
 from operator import itemgetter
 
+import pytest
 import requests
 
 from utils import Commit, to_pr, seen
@@ -366,3 +367,65 @@ Currently available commands for @{user}:
 
 Note: this help text is dynamic and will change with the state of the PR.\
 """
+
+@pytest.mark.parametrize("target", ["master", "other"])
+def test_close_linked_issues(env, project, repo, config, users, partners, target):
+    """Github's linked issues thingie only triggers when:
+
+    - the commit with the reference reaches the default branch
+    - the PR linked to the issue (via the UI or the PR description) is targeted
+      at and merged into the default branch
+
+    The former does eventually happen with odoo, after a while, usually:
+    forward-ports will generally go through the default branch eventually amd
+    the master becomes the default branch on the next major release.
+
+    *However* the latter case basically doesn't happen, if a PR is merged into
+    master it never "reaches the default branch", and while the description is
+    ported forwards (with any link it contains) that's not the case of manual
+    links (it's not even possible since there is no API to manipulate those).
+
+    Thus support for linked issues needs to be added to the mergebot. Since the
+    necessarily has write access to PRs (to close them on merge) it should have
+    the same on issues.
+    """
+    project.write({'branch_ids': [(0, 0, {'name': 'other'})]})
+    with repo:
+        i1 = repo.make_issue(f"Issue 1")
+        i2 = repo.make_issue(f"Issue 2")
+
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref="heads/master")
+        # non-default branch
+        repo.make_ref("heads/other", m)
+    # ensure the default branch is master so we have consistent testing state
+    r = repo._session.patch(f'https://api.github.com/repos/{repo.name}', json={'default_branch': 'master'})
+    assert r.ok, r.text
+
+    with repo:
+        # there are only two locations relevant to us:
+        #
+        # - commit message
+        # - pr description
+        #
+        # the other two are manually linked issues (there's no API for that so
+        # we can't test it) and the merge message (which for us is the PR
+        # message)
+        repo.make_commits(m, Commit(f'This is my commit\n\nfixes #{i1.number}', tree={'m': 'c1'}), ref="heads/pr")
+        pr = repo.make_pr(target=target, head='pr', title="a pr", body=f"fixes #{i2.number}")
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+        repo.post_status(pr.head, 'success')
+
+    env.run_crons(None)
+
+    pr_id = to_pr(env, pr)
+    assert pr_id.state == 'ready'
+    assert pr_id.staging_id
+
+    assert i1.state == 'open'
+    assert i2.state == 'open'
+    with repo:
+        repo.post_status(f'staging.{target}', 'success')
+    env.run_crons(None)
+    assert pr_id.state == 'merged'
+    assert i1.state == 'closed'
+    assert i2.state == 'closed'

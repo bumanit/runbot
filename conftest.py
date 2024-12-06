@@ -5,6 +5,8 @@ import errno
 import select
 import shutil
 import threading
+import typing
+from dataclasses import dataclass
 from typing import Optional
 
 """
@@ -637,7 +639,7 @@ def make_repo(capsys, request, config, tunnel, users):
         # create repo
         r = check(github.post(endpoint, json={
             'name': name,
-            'has_issues': False,
+            'has_issues': True,
             'has_projects': False,
             'has_wiki': False,
             'auto_init': False,
@@ -696,6 +698,24 @@ def _rate_limited(req):
 
 
 Commit = collections.namedtuple('Commit', 'id tree message author committer parents')
+
+
+@dataclass
+class Issue:
+    repo: Repo
+    token: str | None
+    number: int
+
+    @property
+    def state(self) -> typing.Literal['open', 'closed']:
+        r = self.repo._get_session(self.token)\
+            .get(f'https://api.github.com/repos/{self.repo.name}/issues/{self.number}')
+        assert r.ok, r.text
+        state = r.json()['state']
+        assert state in ('open', 'closed'), f"Invalid {state}, expected 'open' or 'closed'"
+        return state
+
+
 class Repo:
     def __init__(self, session, fullname, repos):
         self._session = session
@@ -975,17 +995,13 @@ class Repo:
             title = next(parts)
             body = next(parts, None)
 
-        headers = {}
-        if token:
-            headers['Authorization'] = 'token {}'.format(token)
-
         # FIXME: change tests which pass a commit id to make_pr & remove this
         if re.match(r'[0-9a-f]{40}', head):
             ref = "temp_trash_because_head_must_be_a_ref_%d" % next(ct)
             self.make_ref('heads/' + ref, head)
             head = ref
 
-        r = self._session.post(
+        r = self._get_session(token).post(
             'https://api.github.com/repos/{}/pulls'.format(self.name),
             json={
                 'title': title,
@@ -994,7 +1010,6 @@ class Repo:
                 'base': target,
                 'draft': draft,
             },
-            headers=headers,
         )
         assert 200 <= r.status_code < 300, r.text
 
@@ -1024,6 +1039,17 @@ class Repo:
             yield from r.json()
             if not r.links.get('next'):
                 return
+
+    def make_issue(self, title, *, body=None, token=None) -> None:
+        assert self.hook
+
+        r = self._get_session(token).post(
+            f"https://api.github.com/repos/{self.name}/issues",
+            json={'title': title, 'body': body}
+        )
+        assert 200 <= r.status_code < 300, r.text
+        return Issue(self, token, r.json()['number'])
+
 
     def __enter__(self):
         self.hook = True

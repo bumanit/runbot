@@ -8,6 +8,7 @@ import datetime
 import itertools
 import json
 import logging
+import pprint
 import re
 import time
 from enum import IntEnum
@@ -2084,6 +2085,8 @@ class Stagings(models.Model):
     statuses = fields.Binary(compute='_compute_statuses')
     statuses_cache = fields.Text(default='{}', required=True)
 
+    issues_to_close = fields.Json(default=lambda _: [], help="list of tasks to close if this staging succeeds")
+
     @api.depends('staged_at', 'staging_end')
     def _compute_duration(self):
         for s in self:
@@ -2414,6 +2417,9 @@ class Stagings(models.Model):
                             'pull_request': pr.number,
                             'tags_add': json.dumps([pseudobranch]),
                         })
+                if self.issues_to_close:
+                    self.env['runbot_merge.issues_closer'].create(self.issues_to_close)
+                    self.env.ref('runbot_merge.issues_closer_cron')._trigger()
             finally:
                 self.write({'active': False})
         elif self.state == 'failure' or self.is_timed_out():

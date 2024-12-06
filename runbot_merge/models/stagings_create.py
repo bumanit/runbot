@@ -1,10 +1,12 @@
 import base64
+import collections
 import contextlib
 import dataclasses
 import io
 import json
 import logging
 import os
+import pprint
 import re
 from collections.abc import Mapping
 from difflib import Differ
@@ -34,11 +36,11 @@ class StagingSlice:
     - gh is a cache for the github proxy object (contains a session for reusing
       connection)
     - head is the current staging head for the branch of that repo
-    - working_copy is the local working copy for the staging for that repo
     """
     gh: github.GH
     head: str
     repo: git.Repo
+    tasks: set[int] = dataclasses.field(default_factory=set)
 
 
 StagingState: TypeAlias = Dict[Repository, StagingSlice]
@@ -106,6 +108,7 @@ def try_staging(branch: Branch) -> Optional[Stagings]:
     env = branch.env
     heads = []
     commits = []
+    issues = []
     for repo, it in staging_state.items():
         if it.head == original_heads[repo] and branch.project_id.uniquifier:
             # if we didn't stage anything for that repo and uniquification is
@@ -161,6 +164,10 @@ For-Commit-Id: {it.head}
             'repository_id': repo.id,
             'commit_id': commit,
         }))
+        issues.extend(
+            {'repository_id': repo.id, 'number': i}
+            for i in it.tasks
+        )
 
     # create actual staging object
     st: Stagings = env['runbot_merge.stagings'].create({
@@ -168,6 +175,7 @@ For-Commit-Id: {it.head}
         'staging_batch_ids': [Command.create({'runbot_merge_batch_id': batch.id}) for batch in staged],
         'heads': heads,
         'commits': commits,
+        'issues_to_close': issues,
     })
     for repo, it in staging_state.items():
         _logger.info(
@@ -472,6 +480,56 @@ def stage(pr: PullRequests, info: StagingSlice, related_prs: PullRequests) -> Tu
     if pr_head_tree != pr_base_tree and merge_head_tree == merge_base_tree:
         raise exceptions.MergeError(pr, f'results in an empty tree when merged, might be the duplicate of a merged PR.')
 
+    finder = re.compile(r"""
+    \b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)
+    \s+\#([0-9]+)
+    """, re.VERBOSE | re.IGNORECASE)
+
+    # TODO: maybe support closing issues in other repositories of the same project?
+    info.tasks.update(
+        int(m[1])
+        for commit in pr_commits
+        for m in finder.finditer(commit['commit']['message'])
+    )
+    # Turns out if the PR is not targeted at the default branch, apparently
+    # github doesn't parse its description and add links it to the closing
+    # issues references, it's just "fuck off". So we need to handle that one by
+    # hand too.
+    info.tasks.update(int(m[1]) for m in finder.finditer(pr.message))
+    # So this ends up being *exclusively* for manually linked issues #feelsgoodman.
+    owner, name = pr.repository.name.split('/')
+    r = info.gh('post', '/graphql', json={
+        'query': """
+query ($owner: String!, $name: String!, $pr: Int!) {
+    repository(owner: $owner, name: $name) {
+        pullRequest(number: $pr) {
+            closingIssuesReferences(last: 100) {
+                nodes {
+                    number
+                    repository {
+                        nameWithOwner
+                    }
+                }
+            }
+        }
+    }
+}
+    """,
+        'variables': {'owner': owner, 'name': name, 'pr': pr.number}
+    })
+    res = r.json()
+    if 'errors' in res:
+        _logger.warning(
+            "Failed to fetch closing issues for %s\n%s",
+            pr.display_name,
+            pprint.pformat(res['errors'])
+        )
+    else:
+        info.tasks.update(
+            n['number']
+            for n in res['data']['repository']['pullRequest']['closingIssuesReferences']['nodes']
+            if n['repository']['nameWithOwner'] == pr.repository.name
+        )
     return method, new_head
 
 def stage_squash(pr: PullRequests, info: StagingSlice, commits: List[github.PrCommit], related_prs: PullRequests) -> str:
