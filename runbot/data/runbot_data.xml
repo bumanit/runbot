@@ -19,7 +19,7 @@
     <data noupdate="1">
         <record model="ir.config_parameter" id="runbot.runbot_upgrade_exception_message">
             <field name="key">runbot.runbot_upgrade_exception_message</field>
-            <field name="value">Upgrade exception [#{exception.id}]({base_url}/web/#id={exception.id}&amp;view_type=form&amp;model=runbot.upgrade.exception) added\
+            <field name="value">Upgrade exception [#{exception.id}]({base_url}/odoo/runbot.upgrade.exception/{exception.id}) added\
     {exception.elements}
             </field>
         </record>
