@@ -1,39 +1,46 @@
-(function($) {
-    "use strict";   
-    $(function () {
-        $(document).on('click', '[data-runbot]', function (e) {
-            e.preventDefault();
-            var data = $(this).data();
-            var operation = data.runbot;
-            if (!operation) { 
-                return; 
-            }
-            var xhr = new XMLHttpRequest();
-            var url = e.target.href
-            if (data.runbotBuild) {
-                url = '/runbot/build/' + data.runbotBuild + '/' + operation
-            }
-            var elem = e.target 
-            xhr.addEventListener('load', function () {
-                if (operation == 'rebuild' && window.location.href.split('?')[0].endsWith('/build/' + data.runbotBuild)){
-                    window.location.href = window.location.href.replace('/build/' + data.runbotBuild, '/build/' + xhr.responseText);
-                } else if (operation == 'action') {
-                    elem.parentElement.innerText = this.responseText
-                } else {
-                    window.location.reload();
-                }
-            });
-            xhr.open('POST', url);
-            xhr.send();
+import publicWidget from "@web/legacy/js/public/public_widget";
+
+
+publicWidget.registry.RunbotPage = publicWidget.Widget.extend({
+    // This selector should not be so broad.
+    selector: 'body',
+    events: {
+        'click [data-runbot]': '_onClickDataRunbot',
+        'click [data-runbot-clipboard]': '_onClickRunbotCopy',
+    },
+
+    _onClickDataRunbot: async (event) => {
+        const { currentTarget: target } = event;
+        if (!target) {
+            return;
+        }
+        event.preventDefault();
+        const { runbot: operation, runbotBuild } = target.dataset;
+        if (!operation) {
+            return;
+        }
+        let url = target.href;
+        if (runbotBuild) {
+            url = `/runbot/build/${runbotBuild}/${operation}`
+        }
+        const response = await fetch(url, {
+            method: 'POST',
         });
-    });
-})(jQuery);
+        if (operation == 'rebuild' && window.location.href.split('?')[0].endsWith(`/build/${runbotBuild}`)) {
+            window.location.href = window.location.href.replace('/build/' + runbotBuild, '/build/' + await response.text());
+        } else if (operation == 'action') {
+            target.parentElement.innerText = await response.text();
+        } else {
+            window.location.reload();
+        }
+    },
 
-
-function copyToClipboard(text) {
-    if (!navigator.clipboard) {
-        console.error('Clipboard not supported');
-        return;
+    _onClickRunbotCopy: ({ currentTarget: target }) => {
+        if (!navigator.clipboard || !target) {
+            return;
+        }
+        navigator.clipboard.writeText(
+            target.dataset.runbotClipboard
+        );
     }
-    navigator.clipboard.writeText(text);
-}
+});

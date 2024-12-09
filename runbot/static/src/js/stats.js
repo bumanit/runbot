@@ -51,7 +51,7 @@ config.options.onClick = function(event, activeElements) {
 
 };
 
-function fetch(path, data, then) {
+function _fetch(path, data, then) {
   const xhttp = new XMLHttpRequest();
   xhttp.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
@@ -173,7 +173,7 @@ function fetchUpdateChart() {
   chart_spinner.style.visibility = 'visible';
   fetch_params = compute_fetch_params();
   console.log('fetch')
-  fetch('/runbot/stats/', fetch_params, function(result) {
+  _fetch('/runbot/stats/', fetch_params, function(result) {
     config.result = result;
     Object.values(config.result).forEach(v => v['Aggregate Sum'] = Object.values(v).reduce((a, b) => a + b, 0))
     Object.values(config.result).forEach(v => v['Aggregate Average'] = Object.values(v).reduce((a, b) => a + b, 0)/Object.values(v).length)
