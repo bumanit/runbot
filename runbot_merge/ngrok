@@ -1,0 +1,96 @@
+#!/usr/bin/env python
+import contextlib
+import random
+import signal
+import subprocess
+import threading
+import time
+
+import requests
+import sys
+
+port = int(sys.argv[1])
+
+NGROK_CLI = [
+    'ngrok', 'start', '--none', '--region', 'eu',
+]
+
+own = None
+web_addr = 'http://localhost:4040/api'
+addr = 'localhost:%d' % port
+
+# FIXME: this is for xdist to avoid workers running ngrok at the
+#        exact same time, use lockfile instead
+time.sleep(random.SystemRandom().randint(1, 10))
+# try to find out if ngrok is running, and if it's not attempt
+# to start it
+try:
+    requests.get(web_addr)
+except requests.exceptions.ConnectionError:
+    own = subprocess.Popen(NGROK_CLI, stdout=subprocess.DEVNULL)
+    for _ in range(5):
+        time.sleep(1)
+        with contextlib.suppress(requests.exceptions.ConnectionError):
+            requests.get(web_addr)
+            break
+    else:
+        sys.exit("Unable to connect to ngrok")
+
+requests.post(f'{web_addr}/tunnels', json={
+    'name': str(port),
+    'proto': 'http',
+    'addr': addr,
+    'schemes': ['https'],
+    'inspect': True,
+}).raise_for_status()
+
+
+tunnel = f'{web_addr}/tunnels/{port}'
+for _ in range(10):
+    time.sleep(2)
+    r = requests.get(tunnel)
+    # not created yet, wait and retry
+    if r.status_code == 404:
+        continue
+    # check for weird responses
+    r.raise_for_status()
+
+    print("opened tunnel", file=sys.stderr)
+    print(r.json()['public_url'], flush=True)
+    sys.stdout.close()
+    break
+else:
+    sys.exit("ngrok tunnel creation failed (?)")
+
+shutdown = threading.Event()
+def cleanup(_sig, _frame):
+    requests.delete(tunnel)
+    for _ in range(10):
+        time.sleep(1)
+        r = requests.get(tunnel)
+        # check if deletion is done
+        if r.status_code == 404:
+            break
+        r.raise_for_status()
+    else:
+        raise sys.exit("ngrok tunnel deletion failed")
+
+    r = requests.get(f'{web_addr}/tunnels')
+    if not r.ok:
+        sys.exit(f'{r.reason} {r.text}')
+    # FIXME: if we started ngrok, we should probably wait for all tunnels to be
+    #        closed then terminate ngrok? This is likely a situation where the
+    #        worker which created the ngrok instance finished early...
+    if own and not r.json()['tunnels']:
+        # no more tunnels and we started ngrok -> try to kill it
+        own.terminate()
+        own.wait(30)
+    shutdown.set()
+
+# don't know why but signal.sigwait doesn't seem to take SIGTERM in account so
+# we need the cursed version
+signal.signal(signal.SIGTERM, cleanup)
+signal.signal(signal.SIGINT, cleanup)
+
+print("wait for signal", file=sys.stderr)
+shutdown.wait()

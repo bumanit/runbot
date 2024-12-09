@@ -63,7 +63,6 @@ import itertools
 import os
 import pathlib
 import pprint
-import random
 import re
 import socket
 import subprocess
@@ -101,14 +100,11 @@ def pytest_addoption(parser):
     parser.addoption('--coverage', action='store_true')
 
     parser.addoption(
-        '--tunnel', action="store", choices=['', 'ngrok', 'localtunnel'], default='',
-        help="Which tunneling method to use to expose the local Odoo server "
-             "to hook up github's webhook. ngrok is more reliable, but "
-             "creating a free account is necessary to avoid rate-limiting "
-             "issues (anonymous limiting is rate-limited at 20 incoming "
-             "queries per minute, free is 40, multi-repo batching tests will "
-             "blow through the former); localtunnel has no rate-limiting but "
-             "the servers are way less reliable")
+        '--tunnel', action="store", default='',
+        help="Tunneling script, should take a port as argv[1] and output the "
+             "public address to stdout (with a newline) before closing it. "
+             "The tunneling script should respond gracefully to SIGINT and "
+             "SIGTERM.")
 
 def is_manager(config):
     return not hasattr(config, 'workerinput')
@@ -232,87 +228,22 @@ def users(partners, rolemap):
 
 @pytest.fixture(scope='session')
 def tunnel(pytestconfig: pytest.Config, port: int):
-    """ Creates a tunnel to localhost:<port> using ngrok or localtunnel, should yield the
+    """ Creates a tunnel to localhost:<port>, should yield the
     publicly routable address & terminate the process at the end of the session
     """
-    tunnel = pytestconfig.getoption('--tunnel')
-    if tunnel == '':
-        yield f'http://localhost:{port}'
-    elif tunnel == 'ngrok':
-        own = None
-        web_addr = 'http://localhost:4040/api'
-        addr = 'localhost:%d' % port
-        # try to find out if ngrok is running, and if it's not attempt
-        # to start it
-        try:
-            # FIXME: this is for xdist to avoid workers running ngrok at the
-            #        exact same time, use lockfile instead
-            time.sleep(random.SystemRandom().randint(1, 10))
-            requests.get(web_addr)
-        except requests.exceptions.ConnectionError:
-            own = subprocess.Popen(NGROK_CLI, stdout=subprocess.DEVNULL)
-            for _ in range(5):
-                time.sleep(1)
-                with contextlib.suppress(requests.exceptions.ConnectionError):
-                    requests.get(web_addr)
-                    break
-            else:
-                raise Exception("Unable to connect to ngrok")
-
-        requests.post(f'{web_addr}/tunnels', json={
-            'name': str(port),
-            'proto': 'http',
-            'addr': addr,
-            'schemes': ['https'],
-            'inspect': True,
-        }).raise_for_status()
-
-        tunnel = f'{web_addr}/tunnels/{port}'
-        for _ in range(10):
-            time.sleep(2)
-            r = requests.get(tunnel)
-            # not created yet, wait and retry
-            if r.status_code == 404:
-                continue
-            # check for weird responses
-            r.raise_for_status()
-            try:
-                yield r.json()['public_url']
-            finally:
-                requests.delete(tunnel)
-                for _ in range(10):
-                    time.sleep(1)
-                    r = requests.get(tunnel)
-                    # check if deletion is done
-                    if r.status_code == 404:
-                        break
-                    r.raise_for_status()
-                else:
-                    raise TimeoutError("ngrok tunnel deletion failed")
-
-                r = requests.get(f'{web_addr}/tunnels')
-                assert r.ok, f'{r.reason} {r.text}'
-                # there are still tunnels in the list -> bail
-                if not own or r.json()['tunnels']:
-                    return
-
-                # no more tunnels and we started ngrok -> try to kill it
-                own.terminate()
-                own.wait(30)
-        else:
-            raise TimeoutError("ngrok tunnel creation failed (?)")
-    elif tunnel == 'localtunnel':
-        p = subprocess.Popen(['lt', '-p', str(port)], stdout=subprocess.PIPE)
-        try:
-            r = p.stdout.readline()
-            m = re.match(br'your url is: (https://.*\.localtunnel\.me)', r)
-            assert m, "could not get the localtunnel URL"
-            yield m.group(1).decode('ascii')
-        finally:
+    if tunnel := pytestconfig.getoption('--tunnel'):
+        with subprocess.Popen(
+            [tunnel, str(port)],
+            stdout=subprocess.PIPE,
+            encoding="utf-8",
+        ) as p:
+            # read() blocks forever and I don't know why, read things about the
+            # write end of the stdout pipe still being open here?
+            yield p.stdout.readline().strip()
             p.terminate()
             p.wait(30)
     else:
-        raise ValueError("Unsupported %s tunnel method" % tunnel)
+        yield f'http://localhost:{port}'
 
 class DbDict(dict):
     def __init__(self, adpath, shared_dir):
