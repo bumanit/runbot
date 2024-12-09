@@ -8,7 +8,6 @@ import datetime
 import itertools
 import json
 import logging
-import pprint
 import re
 import time
 from enum import IntEnum
@@ -1576,13 +1575,20 @@ For your own safety I've ignored *everything in your entire comment*.
         """ If the PR is staged, cancel the staging. If the PR is split and
         waiting, remove it from the split (possibly delete the split entirely)
         """
-        split = self.batch_id.split_id
-        if len(split.batch_ids) == 1:
-            # only the batch of this PR -> delete split
-            split.unlink()
-        else:
-            # else remove this batch from the split
-            self.batch_id.split_id = False
+        split: Split = self.batch_id.split_id
+        if split:
+            if split.source_id.likely_false_positive:
+                split.source_id.likely_false_positive = False
+                split.source_id.message_post(
+                    body=f"Assuming failure is a true positive due to {self.display_name} being removed from split.",
+                )
+
+            if len(split.batch_ids) == 1:
+                # only the batch of this PR -> delete split
+                split.unlink()
+            else:
+                # else remove this batch from the split
+                self.batch_id.split_id = False
 
         self.staging_id.cancel('%s ' + reason, self.display_name, *args)
 
@@ -2050,9 +2056,14 @@ class Commit(models.Model):
 
 
 class Stagings(models.Model):
-    _name = _description = 'runbot_merge.stagings'
+    _name = 'runbot_merge.stagings'
+    _description = "A set of batches being tested for integration"
+    _inherit = ['mail.thread']
 
     target = fields.Many2one('runbot_merge.branch', required=True, index=True)
+    parent_id = fields.Many2one('runbot_merge.stagings')
+    child_ids = fields.One2many('runbot_merge.stagings', 'parent_id')
+    likely_false_positive = fields.Boolean(default=False)
 
     staging_batch_ids = fields.One2many('runbot_merge.staging.batch', 'runbot_merge_stagings_id')
     batch_ids = fields.Many2many(
@@ -2264,6 +2275,7 @@ class Stagings(models.Model):
             return False
 
         _logger.info("Cancelling staging %s: " + reason, self, *args)
+        self.parent_id.likely_false_positive = False
         self.write({
             'active': False,
             'state': 'cancelled',
@@ -2283,6 +2295,8 @@ class Stagings(models.Model):
                format_args={'pr': pr, 'message': message},
            )
 
+        if not self.target.split_ids:
+            self.parent_id.likely_false_positive = False
         self.write({
             'active': False,
             'state': 'failure',
@@ -2296,20 +2310,22 @@ class Stagings(models.Model):
             midpoint = batches // 2
             h, t = self.batch_ids[:midpoint], self.batch_ids[midpoint:]
             # NB: batches remain attached to their original staging
-            sh = self.env['runbot_merge.split'].create({
+            sh, st = self.env['runbot_merge.split'].create([{
                 'target': self.target.id,
+                'source_id': (self.parent_id or self).id,
                 'batch_ids': [Command.link(batch.id) for batch in h],
-            })
-            st = self.env['runbot_merge.split'].create({
+            }, {
                 'target': self.target.id,
+                'source_id': (self.parent_id or self).id,
                 'batch_ids': [Command.link(batch.id) for batch in t],
-            })
+            }])
             _logger.info("Split %s to %s (%s) and %s (%s)",
                          self, h, sh, t, st)
             self.write({
                 'active': False,
                 'state': 'failure',
-                'reason': self.reason if self.state == 'failure' else 'timed out'
+                'reason': self.reason if self.state == 'failure' else 'timed out',
+                'likely_false_positive': not self.parent_id,
             })
             return True
 
@@ -2513,7 +2529,13 @@ class Split(models.Model):
     _name = _description = 'runbot_merge.split'
 
     target = fields.Many2one('runbot_merge.branch', required=True)
+    source_id = fields.Many2one('runbot_merge.stagings', required=True)
     batch_ids = fields.One2many('runbot_merge.batch', 'split_id', context={'active_test': False})
+
+    def unlink(self):
+        if not self.env.context.get('staging_split'):
+            self.source_id.likely_false_positive = False
+        return super().unlink()
 
 
 class FetchJob(models.Model):

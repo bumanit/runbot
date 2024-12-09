@@ -64,10 +64,12 @@ def try_staging(branch: Branch) -> Optional[Stagings]:
 
     alone, batches = ready_batches(for_branch=branch)
 
+    parent_id = False
     if alone:
         log("staging high-priority PRs %s", batches)
     elif branch.project_id.staging_priority == 'default':
-        if split := branch.split_ids[:1]:
+        if split := branch.split_ids[:1].with_context(staging_split=True):
+            parent_id = split.source_id.id
             batches = split.batch_ids
             split.unlink()
             log("staging split PRs %s (prioritising splits)", batches)
@@ -79,7 +81,8 @@ def try_staging(branch: Branch) -> Optional[Stagings]:
         if batches:
             log("staging ready PRs %s (prioritising ready)", batches)
         else:
-            split = branch.split_ids[:1]
+            split = branch.split_ids[:1].with_context(staging_split=True)
+            parent_id = split.source_id.id
             batches = split.batch_ids
             split.unlink()
             log("staging split PRs %s (prioritising ready)", batches)
@@ -176,6 +179,7 @@ For-Commit-Id: {it.head}
         'heads': heads,
         'commits': commits,
         'issues_to_close': issues,
+        'parent_id': parent_id,
     })
     for repo, it in staging_state.items():
         _logger.info(
