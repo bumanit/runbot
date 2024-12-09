@@ -15,10 +15,7 @@
                         <field name="version_domain" widget="domain" options="{'model': 'runbot.version', 'in_dialog': True, 'operators': ['in','=', '&lt;', '&gt;']}"/>
                     </group>
                 </sheet>
-                <div class="oe_chatter">
-                    <field name="message_follower_ids"/>
-                    <field name="message_ids"/>
-                </div>
+                <chatter/>
             </form>
         </field>
     </record>
