@@ -187,14 +187,6 @@ a.slots_infos:hover {
 	border-top: 2px solid #666;
 }
 
-[data-toggle="collapse"] .fa:before {
-	content: "\f139";
-}
-
-[data-toggle="collapse"].collapsed .fa:before {
-	content: "\f13a";
-}
-
 body, .table {
 	font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
