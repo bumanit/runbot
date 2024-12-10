@@ -701,7 +701,7 @@ class ErrorQualifyRegex(models.Model):
                         'depends': 'qualifiers',
                         'compute': f"""
 for error_content in self:
-    error_content['x_{field}'] = error_content.qualifiers.get('{field}', '')""",
+    error_content['x_{field}'] = error_content.qualifiers.get('{field}', False)""",
                     })
 
     @api.constrains('regex')
