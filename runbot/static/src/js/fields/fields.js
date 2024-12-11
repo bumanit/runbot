@@ -80,7 +80,7 @@ export class FrontendUrl extends Component {
     }
 
     get displayValue() {
-        return this.props.record.data[this.props.name] ? getFormattedValue(this.props.record, this.props.name, {}) : ''
+        return this.props.record.data[this.props.name] ? getFormattedValue(this.props.record, this.props.name) : ''
     }
 
     get route() {
