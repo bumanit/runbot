@@ -155,7 +155,7 @@ class BuildResult(models.Model):
     # could be a default value, but possible to change it to allow duplicate accros branches
 
     description = fields.Char('Description', help='Informative description')
-    md_description = fields.Char(compute='_compute_md_description', string='MD Parsed Description', help='Informative description markdown parsed')
+    md_description = fields.Html(compute='_compute_md_description', string='MD Parsed Description', help='Informative description markdown parsed', sanitize=False)
     display_name = fields.Char(compute='_compute_display_name')
 
     # Related fields for convenience
