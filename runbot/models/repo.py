@@ -308,7 +308,7 @@ class Remote(models.Model):
                                     raise
 
     def action_check_token(self):
-        if not self.user_has_groups('runbot.group_runbot_admin'):
+        if not self.env.user.has_group('runbot.group_runbot_admin'):
             raise UserError('This action is restricted to admin users')
         token_results = {}
         for repo in self:

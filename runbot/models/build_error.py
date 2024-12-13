@@ -175,7 +175,7 @@ class BuildError(models.Model):
     def write(self, vals):
         if 'active' in vals:
             for build_error in self:
-                if not (self.env.su or self.user_has_groups('runbot.group_runbot_admin')):
+                if not (self.env.su or self.env.user.has_groups('runbot.group_runbot_admin')):
                     if build_error.test_tags:
                         raise UserError("This error as a test-tag and can only be (de)activated by admin")
                     if not vals['active'] and build_error.active and build_error.last_seen_date and build_error.last_seen_date + relativedelta(days=1) > fields.Datetime.now():
