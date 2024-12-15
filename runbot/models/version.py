@@ -31,11 +31,12 @@ class Version(models.Model):
             if version.name == 'master':
                 version.number = '~'
                 version.is_major = False
-            else:
+            elif version.name:
                 # max version number with this format: 99.99
                 version.number = '.'.join([elem.zfill(2) for elem in re.sub(r'[^0-9\.]', '', version.name).split('.')])
                 version.is_major = all(elem == '00' for elem in version.number.split('.')[1:])
 
+    @api.model
     def create(self, values):
         model = self.browse()
         model._get_id.clear_cache(model)
