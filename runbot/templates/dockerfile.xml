@@ -25,7 +25,7 @@ RUN set -x ; \
 RUN curl -sSL https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_<t t-esc="chrome_version"/>_amd64.deb -o /tmp/chrome.deb \
     &amp;&amp; apt-get update \
     &amp;&amp; apt-get -y install --no-install-recommends libxss1 libappindicator1 libindicator7 fonts-liberation libu2f-udev xdg-utils \
-    &amp;&amp; apt-get -y install --no-install-recommends /tmp/chrome.deb \
+    &amp;&amp; apt-get -y install /tmp/chrome.deb || apt-get -f install -y \
     &amp;&amp; rm /tmp/chrome.deb
       </t>
       <t t-else="">
