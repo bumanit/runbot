@@ -105,6 +105,7 @@ class BuildParameters(models.Model):
         for params in self:
             params.commit_ids = params.commit_link_ids.commit_id
 
+    @api.model
     def create(self, values):
         params = self.new(values)
         match = self._find_existing(params.fingerprint)
