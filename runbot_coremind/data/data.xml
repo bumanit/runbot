@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data>
+    <!-- REPOS -->
+    <record id="repo_odoo" model="runbot.repo">
+        <field name="name">odoo</field>
+        <field name="project_id" ref="runbot.main_project"/>
+        <field name="server_files">odoo-bin</field>
+        <field name="manifest_files">__manifest__.py</field>
+        <field name="mode">hook</field>
+        <field name="addons_paths">addons,odoo/addons</field>
+    </record>
+    <record id="remote_odoo_odoo" model="runbot.remote">
+        <field name="name">git@github.com:odoo/odoo.git</field>
+        <field name="repo_id" ref="repo_odoo"/>
+    </record>
+    <record id="repo_enterprise" model="runbot.repo">
+        <field name="name">enterprise</field>
+        <field name="project_id" ref="runbot.main_project"/>
+        <field name="server_files"></field>
+        <field name="manifest_files">__manifest__.py</field>
+        <field name="mode">hook</field>
+        <field name="addons_paths"></field>
+    </record>
+    <record id="remote_odoo_enterprise" model="runbot.remote">
+        <field name="name">git@github.com:odoo/enterprise.git</field>
+        <field name="repo_id" ref="repo_enterprise"/>
+    </record>
+    <!-- <record id="repo_runbot" model="runbot.repo">
+        <field name="name">runbot</field>
+        <field name="project_id" ref="runbot.main_project"/>
+        <field name="server_files"></field>
+        <field name="manifest_files">__manifest__.py</field>
+        <field name="mode">hook</field>
+        <field name="addons_paths"></field>
+        <field name="mode">disabled</field>
+    </record>
+    <record id="remote_odoo_runbot" model="runbot.remote">
+        <field name="name">git@github.com:odoo/runbot.git</field>
+        <field name="repo_id" ref="repo_runbot"/>
+    </record> -->
+    <record id="repo_bumanit_odoo" model="runbot.repo">
+        <field name="name">bumanit_odoo</field>
+        <field name="project_id" ref="runbot.main_project"/>
+        <field name="server_files"></field>
+        <field name="manifest_files">__manifest__.py</field>
+        <field name="mode">hook</field>
+        <field name="addons_paths"></field>
+    </record>
+    <record id="remote_odoo_runbot" model="runbot.remote">
+        <field name="name">git@github.com:bumanit/bumanit_odoo.git</field>
+        <field name="repo_id" ref="repo_bumanit_odoo"/>
+    </record>
+
+    <!-- Triggers-->
+    <record id="trigger_default_odoo" model="runbot.trigger">
+        <field name="name">odoo</field>
+        <field name="category_id" ref="runbot.default_category"/>
+        <field name="project_id" ref="runbot.main_project"/>
+        <field name="config_id" ref="runbot.runbot_build_config_default"/>
+        <field name="repo_ids" eval="[(4, ref('repo_odoo'))]"/>
+        <field name="ci_context"/>
+    </record>
+    <record id="trigger_default_enterprise" model="runbot.trigger">
+        <field name="name">enterprise</field>
+        <field name="category_id" ref="runbot.default_category"/>
+        <field name="project_id" ref="runbot.main_project"/>
+        <field name="config_id" ref="runbot.runbot_build_config_default"/>
+        <field name="repo_ids" eval="[(4, ref('repo_enterprise'))]"/>
+        <field name="dependency_ids" eval="[(4, ref('repo_odoo'))]"/>
+        <field name="ci_context"/>
+    </record>
+</data>
